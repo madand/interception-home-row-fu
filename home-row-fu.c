@@ -12,7 +12,25 @@
 #include <linux/input.h>
 #include <unistd.h>
 
-#include "macros.h"
+////////////////////////////////////////////////////////////////////////////////
+/// Macros
+
+#define SINGLE_EVENT(vname, key, val) \
+    struct input_event vname = {      \
+        .type = EV_KEY, .code = KEY_##key, .value = val};
+
+#define KEY_EVENTS(vname, key)         \
+    SINGLE_EVENT(vname##_down, key, 1) \
+    SINGLE_EVENT(vname##_up, key, 0)   \
+    SINGLE_EVENT(vname##_repeat, key, 2)
+
+#define KEY_PAIR_EVENTS(vname, name) \
+    KEY_EVENTS(left_##vname, LEFT##name), KEY_EVENTS(right_##vname, RIGHT##name)
+
+// Kludge with double macro to be able to (macro)expand args before
+// concatenation.
+#define X_EVENT_VAR_NAME(key, event) key##_##event
+#define EVENT_VAR_NAME(key, event) X_EVENT_VAR_NAME(key, event)
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Key event prototype variables declarations
@@ -70,6 +88,11 @@ void copy_time(struct input_event *dst, const struct input_event *src) {
     dst->time = src->time;
 }
 
+/* Copy curr_input into recent_scan. */
+void save_recent_scan() {
+    memcpy(&recent_scan, &curr_input, sizeof(struct input_event));
+}
+
 /* Return 1 if both arguments have equal values of members type, code and value.
  * Value of the time member is not considered by this function. */
 bool equal(const struct input_event *first, const struct input_event *second) {
@@ -89,6 +112,12 @@ bool is_key_repeat_event() { return curr_input.value == 2; }
 /* Return true if curr_input.code is equal to the given key. */
 bool is_key(const uint key) { return curr_input.code == key; }
 
+/* Send recent_scan and curr_input without any modifications. */
+void passthrough_event() {
+    write_event(&recent_scan);
+    write_event(&curr_input);
+}
+
 /* Send SYN with time copied from the given event.
  * This function should be called right after the event is sent. */
 void send_syn_for_event(struct input_event *event) {
@@ -96,18 +125,11 @@ void send_syn_for_event(struct input_event *event) {
     write_event(&syn);
 }
 
-/* Send recent_scan and curr_input without any modifications. */
-void send_original_event() {
-    write_event(&recent_scan);
-    write_event(&curr_input);
-    // No need to manually send SYN here, since we just letting through the real
-    // event, the next input event will be its SYN anyway.
-}
-
-// Send the given event, with time copied from recent_scan. Send SYN event
-// immediately afterwards.
-void send_emulated_event(struct input_event *event) {
-    copy_time(event, &recent_scan);
+/* Send the given event, with time copied from time_src. Send SYN event
+ * immediately afterwards. */
+void send_emulated_event(struct input_event *event,
+                         struct input_event *time_src) {
+    copy_time(event, time_src);
     write_event(event);
     send_syn_for_event(event);
 }
@@ -118,6 +140,7 @@ void send_emulated_event(struct input_event *event) {
 int handle_key_f() {
     static bool is_already_down     = false;
     static bool has_became_modifier = false;
+    // Store for original Down event and its Scan.
     static struct input_event down_scan, down_event;
 
     // Trash all Repeat events for the target key.
@@ -129,21 +152,25 @@ int handle_key_f() {
     if (!is_key(KEY_F) && !is_already_down)
         return false;
 
-    if (is_key(KEY_F)) {
-        if (is_already_down) {
-            if (is_key_up_event()) {
-                if (has_became_modifier) {
-                    send_emulated_event(EVENT_VAR_NAME(MODIFIER_FOR_F, up));
-                } else {
-                    send_original_event();
-                }
-            }
+    // Current key is NOT F and F is already Down.
+    if (!is_key(KEY_F)) {
+        if (!has_became_modifier) {
+            has_became_modifier = true;
+            send_emulated_event(&EVENT_VAR_NAME(MODIFIER_FOR_F, down),
+                                &down_event);
         }
     }
 
-    // Being here means: current key is NOT F and F is already Down.
-    if (!has_became_modifier) {
-        has_became_modifier = true;
+    // After this point we know that event is about the target key.
+
+    if (is_already_down) {
+        if (is_key_up_event()) {
+            if (has_became_modifier) {
+                send_emulated_event(EVENT_VAR_NAME(MODIFIER_FOR_F, up));
+            } else {
+                passthrough_event();
+            }
+        }
     }
 
     return true;
@@ -159,7 +186,7 @@ int main(void) {
 
     while (read_event(&curr_input)) {
         if (curr_input.type == EV_MSC && curr_input.code == MSC_SCAN) {
-            memcpy(&recent_scan, &curr_input, sizeof(struct input_event));
+            save_recent_scan();
             continue;
         }
 
@@ -172,8 +199,7 @@ int main(void) {
             continue;
 
         // Pass through other EV_KEY events along with their MSC_SCAN.
-        write_event(&recent_scan);
-        write_event(&curr_input);
+        passthrough_event();
     }
 
     return 0;
