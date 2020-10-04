@@ -13,6 +13,17 @@
 #include <unistd.h>
 
 ////////////////////////////////////////////////////////////////////////////////
+/// Constants
+
+// Microseconds per second
+#define USEC_PER_SEC 1e6
+
+// Delay between distinct emulated events. 2e4 us = 20 ms
+#define SLEEP_USEC 2e4
+
+#define MODIFIER_FOR_F left_shift
+
+////////////////////////////////////////////////////////////////////////////////
 /// Macros
 
 #define SINGLE_EVENT(vname, key, val) \
@@ -24,8 +35,9 @@
     SINGLE_EVENT(vname##_up, key, 0)   \
     SINGLE_EVENT(vname##_repeat, key, 2)
 
-#define KEY_PAIR_EVENTS(vname, name) \
-    KEY_EVENTS(left_##vname, LEFT##name), KEY_EVENTS(right_##vname, RIGHT##name)
+#define KEY_PAIR_EVENTS(vname, name)     \
+    KEY_EVENTS(left_##vname, LEFT##name) \
+    KEY_EVENTS(right_##vname, RIGHT##name)
 
 // Kludge with double macro to be able to (macro)expand args before
 // concatenation.
@@ -71,6 +83,16 @@ struct input_event recent_scan;
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Helper functions
+
+/* Advance event's time by usec microseconds. */
+void advance_time(struct input_event *event, suseconds_t usec) {
+    event->time.tv_usec = event->time.tv_usec + usec;
+
+    if (event->time.tv_usec >= USEC_PER_SEC) {
+        event->time.tv_sec++;
+        event->time.tv_usec = event->time.tv_usec - USEC_PER_SEC;
+    }
+}
 
 /* Read next event from STDIN. Return 1 on success. */
 int read_event(struct input_event *event) {
@@ -135,42 +157,68 @@ void send_emulated_event(struct input_event *event,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Key handlers - all magic happens here...
+/// Key handlers - real magic happens here...
 
 int handle_key_f() {
     static bool is_already_down     = false;
-    static bool has_became_modifier = false;
-    // Store for original Down event and its Scan.
-    static struct input_event down_scan, down_event;
+    static bool has_become_modifier = false;
+    static struct input_event real_down_event;
+    static struct input_event modifier_down_event, modifier_up_event;
+
+    // Initialize helper vars on the first invocation.
+    if (modifier_down_event.type != EV_KEY) {
+        modifier_down_event = EVENT_VAR_NAME(MODIFIER_FOR_F, down);
+    }
+    if (modifier_up_event.type != EV_KEY) {
+        modifier_up_event = EVENT_VAR_NAME(MODIFIER_FOR_F, up);
+    }
 
     // Trash all Repeat events for the target key.
     if (is_key(KEY_F) && is_key_repeat_event())
         return true;
 
-    // Bail out early if target key is not down and current event is about
-    // a different key.
+    // Bail out early if the target key is not down and the current event is not
+    // about the target key.
     if (!is_key(KEY_F) && !is_already_down)
         return false;
 
     // Current key is NOT F and F is already Down.
     if (!is_key(KEY_F)) {
-        if (!has_became_modifier) {
-            has_became_modifier = true;
-            send_emulated_event(&EVENT_VAR_NAME(MODIFIER_FOR_F, down),
-                                &down_event);
+        if (!has_become_modifier) {
+            // From this point on the target key "becomes" a modifier, until its
+            // Up event arrives.
+
+            send_emulated_event(&modifier_down_event, &recent_scan);
+
+            usleep(SLEEP_USEC);
+            advance_time(&curr_input, SLEEP_USEC);
+            send_emulated_event(&curr_input, &curr_input);
+
+            has_become_modifier = true;
         }
+
+        return true;
     }
 
-    // After this point we know that event is about the target key.
+    // After this point we know that event is about the target key, and its type
+    // is either Key Up or Key Down. (Repeat events are filtered out near the
+    // beginning of this function).
 
-    if (is_already_down) {
-        if (is_key_up_event()) {
-            if (has_became_modifier) {
-                send_emulated_event(EVENT_VAR_NAME(MODIFIER_FOR_F, up));
-            } else {
-                passthrough_event();
-            }
-        }
+    if (is_key_down_event()) {
+        // Remember that target keys is Down, stop handling without emitting any
+        // events.
+        is_already_down = true;
+
+        return true;
+    }
+
+    // After this point we know that it's a Key Up event and key is (obviously)
+    // already Down. The only unknown here is whether it became a modifier.
+
+    if (has_become_modifier) {
+        send_emulated_event(&modifier_up_event, &recent_scan);
+    } else {
+        passthrough_event();
     }
 
     return true;
@@ -204,3 +252,7 @@ int main(void) {
 
     return 0;
 }
+
+// Local Variables:
+// compile-command: "gcc -o home-row-fu home-row-fu.c"
+// End:
