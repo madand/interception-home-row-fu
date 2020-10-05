@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-
 #include <linux/input.h>
 #include <unistd.h>
 
@@ -18,16 +17,27 @@
 // Microseconds per second
 #define USEC_PER_SEC 1e6
 
-// Delay between distinct emulated events. 2e4 us = 20 ms
+// Delay when sending two events. 2e4 microseconds = 20 milliseconds.
 #define SLEEP_USEC 2e4
 
+// Delay (in milliseconds) before key can become a modifier.
+#define BECOME_MODIFIER_DELAY_MS 150
+#define BECOME_MODIFIER_DELAY_USEC (BECOME_MODIFIER_DELAY_MS * 1e3)
+
 #define MODIFIER_FOR_F left_shift
+#define MODIFIER_FOR_J right_shift
+
+#define EVENT_NOT_HANDLED false
+#define EVENT_HANDLED true
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Macros
 
-#define SINGLE_EVENT(vname, key, val) \
-    struct input_event vname = {      \
+// Convert from Milliseconds to Microseconds.
+#define MSEC_TO_USEC(x) ((x)*1e3)
+
+#define SINGLE_EVENT(vname, key, val)  \
+    const struct input_event vname = { \
         .type = EV_KEY, .code = KEY_##key, .value = val};
 
 #define KEY_EVENTS(vname, key)         \
@@ -71,27 +81,37 @@ KEY_EVENTS(d, D); KEY_EVENTS(k, K);
 // clang-format on
 
 /* SYN event should be sent after each emulated event. */
-struct input_event syn = {.type = EV_SYN, .code = SYN_REPORT, .value = 0};
+const struct input_event syn = {.type = EV_SYN, .code = SYN_REPORT, .value = 0};
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Global state
 
-/* Event currently being processed by the main loop. */
-struct input_event curr_input;
 /* Most recent MSC_SCAN event. */
 struct input_event recent_scan;
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Helper functions
 
-/* Advance event's time by usec microseconds. */
-void advance_time(struct input_event *event, suseconds_t usec) {
-    event->time.tv_usec = event->time.tv_usec + usec;
+/* Advance the given time by usec microseconds. */
+struct timeval advance_time(const struct timeval time, suseconds_t usec) {
+    struct timeval new_time = time;
 
-    if (event->time.tv_usec >= USEC_PER_SEC) {
-        event->time.tv_sec++;
-        event->time.tv_usec = event->time.tv_usec - USEC_PER_SEC;
+    new_time.tv_usec = new_time.tv_usec + usec;
+
+    if (new_time.tv_usec >= USEC_PER_SEC) {
+        new_time.tv_sec++;
+        new_time.tv_usec = new_time.tv_usec - USEC_PER_SEC;
     }
+
+    return new_time;
+}
+
+/* Return the time difference between two events. The return value is in
+ * microseconds. */
+suseconds_t event_time_diff(const struct input_event *earlier,
+                            const struct input_event *later) {
+    return later->time.tv_usec - earlier->time.tv_usec +
+           (later->time.tv_sec - earlier->time.tv_sec) * USEC_PER_SEC;
 }
 
 /* Read next event from STDIN. Return 1 on success. */
@@ -105,14 +125,36 @@ void write_event(const struct input_event *event) {
         exit(EXIT_FAILURE);
 }
 
-/* Copy value of the time from src into dst. */
-void copy_time(struct input_event *dst, const struct input_event *src) {
-    dst->time = src->time;
+/* Write the given event to STDOUT, with the given time. */
+void write_event_with_time(const struct input_event *event,
+                           const struct timeval time) {
+    struct input_event tmp_event = *event;
+
+    tmp_event.time = time;
+    write_event(&tmp_event);
 }
 
-/* Copy curr_input into recent_scan. */
-void save_recent_scan() {
-    memcpy(&recent_scan, &curr_input, sizeof(struct input_event));
+/* Send the given event. */
+void send_event(const struct input_event *event) {
+    struct timeval time = recent_scan.time;
+
+    write_event_with_time(event, time);
+    write_event_with_time(&syn, time);
+}
+
+/* Send the given events with short delay between them. */
+void send_events_with_delay(const struct input_event *event1,
+                            const struct input_event *event2) {
+    struct timeval time1 = recent_scan.time,
+                   time2 = advance_time(time1, (suseconds_t)SLEEP_USEC);
+
+    write_event_with_time(event1, time1);
+    write_event_with_time(&syn, time1);
+
+    usleep(SLEEP_USEC);
+
+    write_event_with_time(event2, time2);
+    write_event_with_time(&syn, time2);
 }
 
 /* Return 1 if both arguments have equal values of members type, code and value.
@@ -122,137 +164,131 @@ bool equal(const struct input_event *first, const struct input_event *second) {
            first->value == second->value;
 }
 
-/* Return true if curr_input is Key Down event. */
-bool is_key_down_event() { return curr_input.value == 1; }
-
-/* Return true if curr_input is Key Up event. */
-bool is_key_up_event() { return curr_input.value == 0; }
-
-/* Return true if curr_input is Key Repeat event. */
-bool is_key_repeat_event() { return curr_input.value == 2; }
-
-/* Return true if curr_input.code is equal to the given key. */
-bool is_key(const uint key) { return curr_input.code == key; }
-
-/* Send recent_scan and curr_input without any modifications. */
-void passthrough_event() {
-    write_event(&recent_scan);
-    write_event(&curr_input);
+/* Return true if event is Key Down event. */
+bool is_key_down_event(const struct input_event *event) {
+    return event->value == 1;
 }
 
-/* Send SYN with time copied from the given event.
- * This function should be called right after the event is sent. */
-void send_syn_for_event(struct input_event *event) {
-    copy_time(&syn, event);
-    write_event(&syn);
+/* Return true if event is Key Up event. */
+bool is_key_up_event(const struct input_event *event) {
+    return event->value == 0;
 }
 
-/* Send the given event, with time copied from time_src. Send SYN event
- * immediately afterwards. */
-void send_emulated_event(struct input_event *event,
-                         struct input_event *time_src) {
-    copy_time(event, time_src);
-    write_event(event);
-    send_syn_for_event(event);
+/* Return true if event is Key Repeat event. */
+bool is_key_repeat_event(const struct input_event *event) {
+    return event->value == 2;
+}
+
+/* Return true if event is for the given key.
+ * Key codes can be found in <input-event-codes.h>. */
+bool is_event_for_key(const struct input_event *event, const uint key) {
+    return event->code == key;
+}
+
+/* Delay-based guard to protect the key form becoming a modifier too early.
+ * This delay is crucial if you type fast enough. */
+bool can_become_modifier(const struct input_event *real_key_down_event) {
+    return event_time_diff(real_key_down_event, &recent_scan) >
+           BECOME_MODIFIER_DELAY_USEC;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Key handlers - real magic happens here...
 
-int handle_key_f() {
-    static bool is_already_down     = false;
-    static bool has_become_modifier = false;
+int handle_key_f(const struct input_event *event) {
+    static bool is_already_down = false, has_became_modifier = false,
+                has_sent_real_down = false;
     static struct input_event real_down_event;
-    static struct input_event modifier_down_event, modifier_up_event;
 
-    // Initialize helper vars on the first invocation.
-    if (modifier_down_event.type != EV_KEY) {
-        modifier_down_event = EVENT_VAR_NAME(MODIFIER_FOR_F, down);
-    }
-    if (modifier_up_event.type != EV_KEY) {
-        modifier_up_event = EVENT_VAR_NAME(MODIFIER_FOR_F, up);
-    }
+    // Skip all Repeat events for the target key.
+    if (is_event_for_key(event, KEY_F) && is_key_repeat_event(event))
+        return EVENT_HANDLED;
 
-    // Trash all Repeat events for the target key.
-    if (is_key(KEY_F) && is_key_repeat_event())
-        return true;
-
-    // Bail out early if the target key is not down and the current event is not
-    // about the target key.
-    if (!is_key(KEY_F) && !is_already_down)
-        return false;
+    if (!is_event_for_key(event, KEY_F) && !is_already_down)
+        return EVENT_NOT_HANDLED;
 
     // Current key is NOT F and F is already Down.
-    if (!is_key(KEY_F)) {
-        if (!has_become_modifier) {
-            // From this point on the target key "becomes" a modifier, until its
-            // Up event arrives.
+    if (!is_event_for_key(event, KEY_F)) {
+        if (has_became_modifier || has_sent_real_down)
+            return EVENT_NOT_HANDLED;
 
-            send_emulated_event(&modifier_down_event, &recent_scan);
-
-            usleep(SLEEP_USEC);
-            advance_time(&curr_input, SLEEP_USEC);
-            send_emulated_event(&curr_input, &curr_input);
-
-            has_become_modifier = true;
+        if (can_become_modifier(&real_down_event)) {
+            send_events_with_delay(&EVENT_VAR_NAME(MODIFIER_FOR_F, down),
+                                   event);
+            has_became_modifier = true;
+        } else {
+            send_events_with_delay(&real_down_event, event);
+            has_sent_real_down = true;
         }
 
-        return true;
+        return EVENT_HANDLED;
     }
 
     // After this point we know that event is about the target key, and its type
-    // is either Key Up or Key Down. (Repeat events are filtered out near the
-    // beginning of this function).
+    // is either Key Up or Key Down (Key Repeat events are filtered out near the
+    // function's beginning).
 
-    if (is_key_down_event()) {
-        // Remember that target keys is Down, stop handling without emitting any
-        // events.
+    if (is_key_down_event(event)) {
+        real_down_event = *event;
         is_already_down = true;
 
-        return true;
+        return EVENT_HANDLED;
     }
 
-    // After this point we know that it's a Key Up event and key is (obviously)
-    // already Down. The only unknown here is whether it became a modifier.
+    // After this point we know that it's a Key Up event.
 
-    if (has_become_modifier) {
-        send_emulated_event(&modifier_up_event, &recent_scan);
-    } else {
-        passthrough_event();
+    is_already_down = false;
+
+    if (has_became_modifier) {
+        send_event(&EVENT_VAR_NAME(MODIFIER_FOR_F, up));
+        has_became_modifier = false;
+
+        return EVENT_HANDLED;
     }
 
-    return true;
+    if (has_sent_real_down) {
+        send_event(event);
+        has_sent_real_down = false;
+
+        return EVENT_HANDLED;
+    }
+
+    send_events_with_delay(&real_down_event, event);
+
+    return EVENT_HANDLED;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Entry point
 
 int main(void) {
-    struct input_event curr_input, recent_scan;
+    struct input_event curr_event;
 
-    setbuf(stdin, NULL), setbuf(stdout, NULL);
+    setbuf(stdin, NULL), setbuf(stdout, NULL), setbuf(stderr, NULL);
 
-    while (read_event(&curr_input)) {
-        if (curr_input.type == EV_MSC && curr_input.code == MSC_SCAN) {
-            save_recent_scan();
+    while (read_event(&curr_event)) {
+        if (curr_event.type == EV_MSC && curr_event.code == MSC_SCAN) {
+            recent_scan = curr_event;
             continue;
         }
 
-        if (curr_input.type != EV_KEY) {
-            write_event(&curr_input);
+        if (curr_event.type != EV_KEY) {
+            write_event(&curr_event);
             continue;
         }
 
-        if (handle_key_f())
+        if (handle_key_f(&curr_event) == EVENT_HANDLED)
             continue;
 
-        // Pass through other EV_KEY events along with their MSC_SCAN.
-        passthrough_event();
+        // If no handler handled this event, pass it through along with its
+        // MSC_SCAN.
+        write_event(&recent_scan);
+        write_event(&curr_event);
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 // Local Variables:
-// compile-command: "gcc -o home-row-fu home-row-fu.c"
+// compile-command: "gcc -Wall -o home-row-fu home-row-fu.c"
 // End:
