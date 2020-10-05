@@ -22,6 +22,7 @@
 
 // Delay (in milliseconds) before key can become a modifier.
 #define BECOME_MODIFIER_DELAY_MS 150
+// Delay (in microseconds) before key can become a modifier.
 #define BECOME_MODIFIER_DELAY_USEC (BECOME_MODIFIER_DELAY_MS * 1e3)
 
 #define MODIFIER_FOR_F left_shift
@@ -33,26 +34,29 @@
 ////////////////////////////////////////////////////////////////////////////////
 /// Macros
 
-// Convert from Milliseconds to Microseconds.
-#define MSEC_TO_USEC(x) ((x)*1e3)
-
-#define SINGLE_EVENT(vname, key, val)  \
-    const struct input_event vname = { \
+#define DEFINE_EVENT_VAR(vname, key, val) \
+    const struct input_event vname = {    \
         .type = EV_KEY, .code = KEY_##key, .value = val};
 
-#define KEY_EVENTS(vname, key)         \
-    SINGLE_EVENT(vname##_down, key, 1) \
-    SINGLE_EVENT(vname##_up, key, 0)   \
-    SINGLE_EVENT(vname##_repeat, key, 2)
+#define KEY_EVENTS(vname, key)             \
+    DEFINE_EVENT_VAR(vname##_down, key, 1) \
+    DEFINE_EVENT_VAR(vname##_up, key, 0)   \
+    DEFINE_EVENT_VAR(vname##_repeat, key, 2)
 
 #define KEY_PAIR_EVENTS(vname, name)     \
     KEY_EVENTS(left_##vname, LEFT##name) \
     KEY_EVENTS(right_##vname, RIGHT##name)
 
-// Kludge with double macro to be able to (macro)expand args before
-// concatenation.
-#define X_EVENT_VAR_NAME(key, event) key##_##event
-#define EVENT_VAR_NAME(key, event) X_EVENT_VAR_NAME(key, event)
+#define HANDLE_KEY_CALL(event, key, modifier) \
+    handle_key(event, KEY_##key, &modifier##_down, &modifier##_up)
+
+#define HANDLE_KEY_STATEMENT(event, key, modifier)              \
+    if (HANDLE_KEY_CALL(event, key, modifier) == EVENT_HANDLED) \
+    continue
+
+#define HANDLE_KEY_PAIR(event, left_key, right_key, modifier) \
+    HANDLE_KEY_STATEMENT(event, left_key, left_##modifier);   \
+    HANDLE_KEY_STATEMENT(event, right_key, right_##modifier);
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Key event prototype variables declarations
@@ -71,13 +75,6 @@ KEY_PAIR_EVENTS(shift, SHIFT);
 KEY_PAIR_EVENTS(ctrl, CTRL);
 KEY_PAIR_EVENTS(alt, ALT);
 KEY_PAIR_EVENTS(meta, META);
-
-// Key pairs for modifier emulation.
-// E.g. A -> Left Shift; SEMICOLON -> Right Shift
-KEY_EVENTS(a, A); KEY_EVENTS(semicolon, SEMICOLON);
-KEY_EVENTS(s, S); KEY_EVENTS(l, L);
-KEY_EVENTS(f, F); KEY_EVENTS(j, J);
-KEY_EVENTS(d, D); KEY_EVENTS(k, K);
 // clang-format on
 
 /* SYN event should be sent after each emulated event. */
@@ -88,6 +85,12 @@ const struct input_event syn = {.type = EV_SYN, .code = SYN_REPORT, .value = 0};
 
 /* Most recent MSC_SCAN event. */
 struct input_event recent_scan;
+
+/* State that handle_key() needs to keep between calls. */
+bool is_already_down[KEY_MAX], has_became_modifier[KEY_MAX],
+    has_sent_real_down[KEY_MAX];
+
+struct input_event real_down_event[KEY_MAX];
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Helper functions
@@ -181,11 +184,11 @@ bool is_key_repeat_event(const struct input_event *event) {
 
 /* Return true if event is for the given key.
  * Key codes can be found in <input-event-codes.h>. */
-bool is_event_for_key(const struct input_event *event, const uint key) {
-    return event->code == key;
+bool is_event_for_key(const struct input_event *event, const uint key_code) {
+    return event->code == key_code;
 }
 
-/* Delay-based guard to protect the key form becoming a modifier too early.
+/* Delay-based guard to protect the key from becoming a modifier too early.
  * This delay is crucial if you type fast enough. */
 bool can_become_modifier(const struct input_event *real_key_down_event) {
     return event_time_diff(real_key_down_event, &recent_scan) >
@@ -193,33 +196,32 @@ bool can_become_modifier(const struct input_event *real_key_down_event) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Key handlers - real magic happens here...
 
-int handle_key_f(const struct input_event *event) {
-    static bool is_already_down = false, has_became_modifier = false,
-                has_sent_real_down = false;
-    static struct input_event real_down_event;
-
+/* Key handler - real magic happens here... */
+bool handle_key(const struct input_event *event, const uint key,
+                const struct input_event *modifier_down_event,
+                const struct input_event *modifier_up_event) {
     // Skip all Repeat events for the target key.
-    if (is_event_for_key(event, KEY_F) && is_key_repeat_event(event))
+    if (is_event_for_key(event, key) && is_key_repeat_event(event))
         return EVENT_HANDLED;
 
-    if (!is_event_for_key(event, KEY_F) && !is_already_down)
+    if (!is_event_for_key(event, key) && !is_already_down[key])
         return EVENT_NOT_HANDLED;
 
     // Current key is NOT F and F is already Down.
-    if (!is_event_for_key(event, KEY_F)) {
-        if (has_became_modifier || has_sent_real_down)
+    if (!is_event_for_key(event, key)) {
+        if (has_became_modifier[key] || has_sent_real_down[key])
             return EVENT_NOT_HANDLED;
 
-        if (can_become_modifier(&real_down_event)) {
-            send_events_with_delay(&EVENT_VAR_NAME(MODIFIER_FOR_F, down),
-                                   event);
-            has_became_modifier = true;
-        } else {
-            send_events_with_delay(&real_down_event, event);
-            has_sent_real_down = true;
+        if (can_become_modifier(&real_down_event[key])) {
+            send_events_with_delay(modifier_down_event, event);
+            has_became_modifier[key] = true;
+
+            return EVENT_HANDLED;
         }
+
+        send_events_with_delay(&real_down_event[key], event);
+        has_sent_real_down[key] = true;
 
         return EVENT_HANDLED;
     }
@@ -229,31 +231,31 @@ int handle_key_f(const struct input_event *event) {
     // function's beginning).
 
     if (is_key_down_event(event)) {
-        real_down_event = *event;
-        is_already_down = true;
+        real_down_event[key] = *event;
+        is_already_down[key] = true;
 
         return EVENT_HANDLED;
     }
 
     // After this point we know that it's a Key Up event.
 
-    is_already_down = false;
+    is_already_down[key] = false;
 
-    if (has_became_modifier) {
-        send_event(&EVENT_VAR_NAME(MODIFIER_FOR_F, up));
-        has_became_modifier = false;
+    if (has_became_modifier[key]) {
+        send_event(modifier_up_event);
+        has_became_modifier[key] = false;
 
         return EVENT_HANDLED;
     }
 
-    if (has_sent_real_down) {
+    if (has_sent_real_down[key]) {
         send_event(event);
-        has_sent_real_down = false;
+        has_sent_real_down[key] = false;
 
         return EVENT_HANDLED;
     }
 
-    send_events_with_delay(&real_down_event, event);
+    send_events_with_delay(&real_down_event[key], event);
 
     return EVENT_HANDLED;
 }
@@ -277,8 +279,9 @@ int main(void) {
             continue;
         }
 
-        if (handle_key_f(&curr_event) == EVENT_HANDLED)
-            continue;
+        HANDLE_KEY_PAIR(&curr_event, F, J, ctrl);
+        HANDLE_KEY_PAIR(&curr_event, D, K, meta);
+        HANDLE_KEY_PAIR(&curr_event, S, L, shift);
 
         // If no handler handled this event, pass it through along with its
         // MSC_SCAN.
