@@ -86,7 +86,7 @@ const struct input_event syn = {.type = EV_SYN, .code = SYN_REPORT, .value = 0};
 
 /* Most recent MSC_SCAN event. */
 static struct input_event recent_scan;
-/* Variable for keeping time value when sending emulatied events. recent_time
+/* Variable for keeping time value when sending emulated events. recent_time
  * gets advanced by small mount after each send_event() and gets synchronized
  * with recent_scan on each new SCAN event. */
 static struct timeval recent_time;
@@ -211,6 +211,7 @@ bool can_send_real_down(const struct input_event *real_key_down_event) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+/// Key handler - real magic happens here...
 
 void handle_key_down(const struct input_event *event, const uint key,
                      const struct input_event *modifier_down_event,
@@ -269,7 +270,6 @@ void handle_key_up(const struct input_event *event, const uint key,
     }
 }
 
-/* Key handler - real magic happens here... */
 bool handle_key(const struct input_event *event, const uint key,
                 const struct input_event *modifier_down_event,
                 const struct input_event *modifier_up_event) {
@@ -321,8 +321,6 @@ int main(void) {
         HANDLE_KEY_PAIR(KEY_S, KEY_L, shift);
         HANDLE_KEY_PAIR(KEY_A, KEY_SEMICOLON, alt);
 
-        // If no handler handled this event, pass it through along with its
-        // MSC_SCAN.
         if (!found_handler) {
             write_event_with_time(&recent_scan, recent_time);
             write_event_with_time(&curr_event, recent_time);
