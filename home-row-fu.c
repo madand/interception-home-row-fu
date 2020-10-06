@@ -252,9 +252,6 @@ bool handle_key(const struct input_event *event, const uint key,
         handle_key_down(event, key, modifier_down_event, modifier_up_event);
     } else if (is_key_up_event(event)) {
         handle_key_up(event, key, modifier_down_event, modifier_up_event);
-    } else {
-        // We never handle other event types.
-        return false;
     }
 
     return is_event_for_key(event, key);
@@ -278,10 +275,6 @@ int main(void) {
 
         if (curr_event.type != EV_KEY) {
             write_event(&curr_event);
-            continue;
-        }
-
-        if (is_key_repeat_event(&curr_event)) {
             continue;
         }
 
