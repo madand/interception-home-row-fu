@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <string.h>
 #include <linux/input.h>
 #include <unistd.h>
 
@@ -17,8 +16,8 @@
 // Microseconds per second
 #define USEC_PER_SEC 1e6
 
-// Delay when sending two events. 2e4 microseconds = 20 milliseconds.
-#define SLEEP_USEC 2e4
+// Delay when sending two events. 1e3 microseconds = 1 millisecond.
+#define SLEEP_USEC 1e3
 
 // Delay (in milliseconds) before key can become a modifier.
 #define BECOME_MODIFIER_DELAY_MSEC 150
@@ -26,14 +25,10 @@
 #define BECOME_MODIFIER_DELAY_USEC (BECOME_MODIFIER_DELAY_MSEC * 1e3)
 
 // Delay (in milliseconds) before key can become a modifier.
-#define REMAIN_REAL_KEY_MSEC 1000
+#define REMAIN_REAL_KEY_MSEC 700
 // Delay (in microseconds) before key can become a modifier.
 #define REMAIN_REAL_KEY_USEC (REMAIN_REAL_KEY_MSEC * 1e3)
 
-#define EVENT_NOT_HANDLED false
-#define EVENT_HANDLED true
-
-////////////////////////////////////////////////////////////////////////////////
 /// Macros
 
 #define DEFINE_EVENT_VAR(vname, key, val) \
@@ -155,28 +150,6 @@ void send_event(const struct input_event *event) {
     usleep(SLEEP_USEC);
 }
 
-/* Send the given events with short delay between them. */
-void send_events_with_delay(const struct input_event *event1,
-                            const struct input_event *event2) {
-    struct timeval time1 = recent_scan.time,
-                   time2 = advance_time(time1, (suseconds_t)SLEEP_USEC);
-
-    write_event_with_time(event1, time1);
-    write_event_with_time(&syn, time1);
-
-    usleep(SLEEP_USEC);
-
-    write_event_with_time(event2, time2);
-    write_event_with_time(&syn, time2);
-}
-
-/* Return 1 if both arguments have equal values of members type, code and value.
- * Value of the time member is not considered by this function. */
-bool equal(const struct input_event *first, const struct input_event *second) {
-    return first->type == second->type && first->code == second->code &&
-           first->value == second->value;
-}
-
 /* Return true if event is Key Down event. */
 bool is_key_down_event(const struct input_event *event) {
     return event->value == 1;
@@ -205,6 +178,8 @@ bool can_become_modifier(const struct input_event *real_key_down_event) {
            BECOME_MODIFIER_DELAY_USEC;
 }
 
+/* Delay-based guard to protect the key from inserting a letter if pressed for a
+ * longish time. */
 bool can_send_real_down(const struct input_event *real_key_down_event) {
     return event_time_diff(real_key_down_event, &recent_scan) <
            REMAIN_REAL_KEY_USEC;
