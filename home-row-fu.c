@@ -53,7 +53,7 @@
     handle_key(&curr_event, key, &modifier##_down, &modifier##_up)
 
 #define HANDLE_KEY_STATEMENT(key, modifier) \
-    found_handler = found_handler || HANDLE_KEY_CALL(key, modifier);
+    found_handler = HANDLE_KEY_CALL(key, modifier) || found_handler;
 
 #define HANDLE_KEY_PAIR(left_key, right_key, modifier) \
     HANDLE_KEY_STATEMENT(left_key, left_##modifier);   \
