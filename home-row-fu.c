@@ -1,8 +1,7 @@
 // home-row-fu.c
 
 // Author: Andriy B. Kmit' <dev@madand.net>
-// Released into Public Domain under CC0:
-// https://creativecommons.org/publicdomain/zero/1.0/
+// Public Domain / CC0 https://creativecommons.org/publicdomain/zero/1.0/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,7 +23,7 @@
 // Delay (in microseconds) before key can become a modifier.
 #define BECOME_MODIFIER_DELAY_USEC (BECOME_MODIFIER_DELAY_MSEC * 1e3)
 
-// Delay (in milliseconds) before key can become a modifier.
+// Maximum time (in milliseconds) before key can become a modifier.
 #define REMAIN_REAL_KEY_MSEC 700
 // Delay (in microseconds) before key can become a modifier.
 #define REMAIN_REAL_KEY_USEC (REMAIN_REAL_KEY_MSEC * 1e3)
