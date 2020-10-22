@@ -3,121 +3,52 @@
 // Author: Andriy B. Kmit' <dev@madand.net>
 // Public Domain / CC0 https://creativecommons.org/publicdomain/zero/1.0/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <linux/input.h>
+#include <stdio.h>  // setbuf, fwrite, fread
+#include <stdlib.h>  // EXIT_SUCCESS, EXIT_FAILURE
+#include <stdbool.h> // bool, true, false
+#include <stdint.h>
+#include <linux/input.h>  // struct input_event
 #include <unistd.h>
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Constants
 
-// Microseconds per second
-#define USEC_PER_SEC 1e6
-
-// Delay when sending two events. 1e3 microseconds = 1 millisecond.
-#define SLEEP_USEC 1e3
-
 // Delay (in milliseconds) before key can become a modifier.
 #define BECOME_MODIFIER_DELAY_MSEC 150
-// Delay (in microseconds) before key can become a modifier.
-#define BECOME_MODIFIER_DELAY_USEC (BECOME_MODIFIER_DELAY_MSEC * 1e3)
 
-// Maximum time (in milliseconds) before key can become a modifier.
+// Maximum time (in milliseconds) when key release still inserts a letter.
 #define REMAIN_REAL_KEY_MSEC 700
-// Delay (in microseconds) before key can become a modifier.
-#define REMAIN_REAL_KEY_USEC (REMAIN_REAL_KEY_MSEC * 1e3)
 
-/// Macros
+// Key event state constants
+#define KEY_EVENT_DOWN 1
+#define KEY_EVENT_UP 0
+#define KEY_EVENT_REPEAT 3
 
-#define DEFINE_EVENT_VAR(vname, key, val) \
-    const struct input_event vname = {    \
-        .type = EV_KEY, .code = KEY_##key, .value = val};
-
-#define KEY_EVENTS(vname, key)             \
-    DEFINE_EVENT_VAR(vname##_down, key, 1) \
-    DEFINE_EVENT_VAR(vname##_up, key, 0)   \
-    DEFINE_EVENT_VAR(vname##_repeat, key, 2)
-
-#define KEY_PAIR_EVENTS(vname, name)     \
-    KEY_EVENTS(left_##vname, LEFT##name) \
-    KEY_EVENTS(right_##vname, RIGHT##name)
-
-#define HANDLE_KEY_CALL(key, modifier) \
-    handle_key(&curr_event, key, &modifier##_down, &modifier##_up)
-
-#define HANDLE_KEY_STATEMENT(key, modifier) \
-    found_handler = HANDLE_KEY_CALL(key, modifier) || found_handler;
-
-#define HANDLE_KEY_PAIR(left_key, right_key, modifier) \
-    HANDLE_KEY_STATEMENT(left_key, left_##modifier);   \
-    HANDLE_KEY_STATEMENT(right_key, right_##modifier);
+// Microseconds per second
+#define USEC_PER_SEC 1e6
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Key event prototype variables declarations
 
-// clang-format off
-// Generate series of var definitions for keys we will work with. For each key
-// six definitions are generated, three for left and three for the right
-// counterpart.
-// E.g. KEY_PAIR_EVENTS(shift, SHIFT) expands to declarations of the following
-// vars:
-//   left_shift_down, left_shift_up, left_shift_repeat,
-//   right_shift_down, right_shift_up, right_shift_repeat.
-// Where each var declaration is of the form:
-//   struct input_event left_shift_down = { .type = EV_KEY, .code = KEY_LEFTSHIFT, .value = 1};
-KEY_PAIR_EVENTS(shift, SHIFT);
-KEY_PAIR_EVENTS(ctrl, CTRL);
-KEY_PAIR_EVENTS(alt, ALT);
-KEY_PAIR_EVENTS(meta, META);
-// clang-format on
-
 /* SYN event should be sent after each emulated event. */
-const struct input_event syn = {.type = EV_SYN, .code = SYN_REPORT, .value = 0};
+static const struct input_event ev_syn = {
+    .type = EV_SYN, .code = SYN_REPORT, .value = 0};
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Global state
 
-/* Most recent MSC_SCAN event. */
+/* Most recent MSC_SCAN event. We receive scan evens before every key event, so
+ * we use it for timing comparisons. */
 static struct input_event recent_scan;
-/* Variable for keeping time value when sending emulated events. recent_time
- * gets advanced by small mount after each send_event() and gets synchronized
- * with recent_scan on each new SCAN event. */
-static struct timeval recent_time;
-
-/* State that handle_key() needs to keep between calls. */
-static char is_already_down[KEY_MAX], has_became_modifier[KEY_MAX],
-    has_sent_real_down[KEY_MAX];
-
-static struct input_event recent_down_event[KEY_MAX];
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Helper functions
 
-/* Advance the given time by usec microseconds. */
-struct timeval advance_time(const struct timeval time, suseconds_t usec) {
-    struct timeval new_time = time;
-
-    new_time.tv_usec = new_time.tv_usec + usec;
-
-    if (new_time.tv_usec >= USEC_PER_SEC) {
-        new_time.tv_sec++;
-        new_time.tv_usec = new_time.tv_usec - USEC_PER_SEC;
-    }
-
-    return new_time;
-}
-
-void advance_recent_time(suseconds_t usec) {
-    recent_time = advance_time(recent_time, usec);
-}
-
-/* Return the time difference between two events. The return value is in
- * microseconds. */
-suseconds_t event_time_diff(const struct input_event *earlier,
-                            const struct input_event *later) {
-    return later->time.tv_usec - earlier->time.tv_usec +
-           (later->time.tv_sec - earlier->time.tv_sec) * USEC_PER_SEC;
+/* Return the time difference in microseconds. */
+suseconds_t time_diff(const struct timeval *earlier,
+                      const struct timeval *later) {
+    return later->tv_usec - earlier->tv_usec +
+           (later->tv_sec - earlier->tv_sec) * USEC_PER_SEC;
 }
 
 /* Read next event from STDIN. Return 1 on success. */
@@ -131,37 +62,44 @@ void write_event(const struct input_event *event) {
         exit(EXIT_FAILURE);
 }
 
-/* Write the given event to STDOUT, with the given time. */
-void write_event_with_time(const struct input_event *event,
-                           const struct timeval time) {
-    struct input_event tmp_event = *event;
+/* Output events queue. */
+static struct input_event ev_queue[20];
+unsigned int ev_queue_size = 0;
 
-    tmp_event.time = time;
-    write_event(&tmp_event);
+/* Add event to the output events queue. */
+void enqueue_event(const struct input_event *event) {
+    ev_queue[ev_queue_size++] = *event;
 }
 
-/* Send the given event. */
-void send_event(const struct input_event *event) {
-    write_event_with_time(event, recent_time);
-    write_event_with_time(&syn, recent_time);
-
-    advance_recent_time(SLEEP_USEC);
-    usleep(SLEEP_USEC);
+/* Add event to the output events queue and SYN event afterwards. */
+void enqueue_event_and_syn(const struct input_event *event) {
+    ev_queue[ev_queue_size++] = *event;
+    ev_queue[ev_queue_size++] = ev_syn;
 }
+
+void flush_event_queue() {
+    if (fwrite(ev_queue, sizeof(struct input_event), ev_queue_size, stdout) !=
+        ev_queue_size)
+        exit(EXIT_FAILURE);
+    ev_queue_size = 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/// Predicates
 
 /* Return true if event is Key Down event. */
 bool is_key_down_event(const struct input_event *event) {
-    return event->value == 1;
+    return event->value == KEY_EVENT_DOWN;
 }
 
 /* Return true if event is Key Up event. */
 bool is_key_up_event(const struct input_event *event) {
-    return event->value == 0;
+    return event->value == KEY_EVENT_UP;
 }
 
 /* Return true if event is Key Repeat event. */
 bool is_key_repeat_event(const struct input_event *event) {
-    return event->value == 2;
+    return event->value == KEY_EVENT_REPEAT;
 }
 
 /* Return true if event is for the given key.
@@ -172,88 +110,122 @@ bool is_event_for_key(const struct input_event *event, const uint key_code) {
 
 /* Delay-based guard to protect the key from becoming a modifier too early.
  * This delay is crucial if you type fast enough. */
-bool can_become_modifier(const struct input_event *real_key_down_event) {
-    return event_time_diff(real_key_down_event, &recent_scan) >
-           BECOME_MODIFIER_DELAY_USEC;
+bool can_become_modifier(const struct timeval *recent_down_time) {
+    return time_diff(recent_down_time, &recent_scan.time) >
+           (BECOME_MODIFIER_DELAY_MSEC * 1e3);
 }
 
 /* Delay-based guard to protect the key from inserting a letter if pressed for a
  * longish time. */
-bool can_send_real_down(const struct input_event *real_key_down_event) {
-    return event_time_diff(real_key_down_event, &recent_scan) <
-           REMAIN_REAL_KEY_USEC;
+bool can_send_real_down(const struct timeval *recent_down_time) {
+    return time_diff(recent_down_time, &recent_scan.time) <
+           (REMAIN_REAL_KEY_MSEC * 1e3);
 }
+
+struct key_state {
+    /* Key code of the physical key. */
+    const uint16_t key;
+    /* Time of the most recent Key Down event. */
+    struct timeval recent_down_time;
+    /* Flag indicating that the key is currently down. */
+    bool is_down;
+    /* Flag indicating that we sent a real event (a letter). If this is set
+     * the key cannot become a modifier until released. */
+    bool has_sent_real_down;
+    /* Flag indicating that the key has became a modifier until it's
+     * released. */
+    bool has_became_modifier;
+    // Down and Up events conveniently prepared for sending when the time comes:
+    const struct input_event ev_key_down;
+    const struct input_event ev_key_up;
+    const struct input_event ev_modifier_down;
+    const struct input_event ev_modifier_up;
+} key_config[] = {
+#define DEFINE_MAPPING(key_code, modifier_code)        \
+    {                                                  \
+        .key              = key_code,                  \
+        .ev_key_down      = {.type  = EV_KEY,          \
+                        .code  = key_code,        \
+                        .value = KEY_EVENT_DOWN}, \
+        .ev_key_up        = {.type  = EV_KEY,          \
+                      .code  = key_code,        \
+                      .value = KEY_EVENT_UP},   \
+        .ev_modifier_down = {.type  = EV_KEY,          \
+                             .code  = modifier_code,   \
+                             .value = KEY_EVENT_DOWN}, \
+        .ev_modifier_up   = {.type  = EV_KEY,          \
+                           .code  = modifier_code,   \
+                           .value = KEY_EVENT_UP},   \
+    },
+
+#include "key_config.h"
+
+#undef DEFINE_MAPPING
+};
+
+static const size_t key_config_size =
+    sizeof(key_config) / sizeof(key_config[0]);
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Key handler - real magic happens here...
+/// Key handlers
 
-void handle_key_down(const struct input_event *event, const uint key,
-                     const struct input_event *modifier_down_event,
-                     const struct input_event *modifier_up_event) {
-    if (!is_event_for_key(event, key) && is_already_down[key]) {
-        if (has_became_modifier[key] || has_sent_real_down[key])
+void handle_key_down(const struct input_event *event, struct key_state *state) {
+    if (!is_event_for_key(event, state->key) && state->is_down) {
+        if (state->has_became_modifier || state->has_sent_real_down)
             return;
 
-        if (can_become_modifier(&recent_down_event[key])) {
-            send_event(modifier_down_event);
-            has_became_modifier[key] = true;
-
+        if (can_become_modifier(&state->recent_down_time)) {
+            enqueue_event_and_syn(&state->ev_modifier_down);
+            state->has_became_modifier = true;
             return;
         }
 
-        if (can_send_real_down(&recent_down_event[key])) {
-            send_event(&recent_down_event[key]);
-            has_sent_real_down[key] = true;
-
+        if (can_send_real_down(&state->recent_down_time)) {
+            enqueue_event_and_syn(&state->ev_key_down);
+            state->has_sent_real_down = true;
             return;
         }
     }
 
-    if (is_event_for_key(event, key)) {
-        recent_down_event[key] = *event;
-        is_already_down[key]   = true;
+    if (is_event_for_key(event, state->key)) {
+        state->recent_down_time = event->time;
+        state->is_down          = true;
     }
 }
 
-void handle_key_up(const struct input_event *event, const uint key,
-                   const struct input_event *modifier_down_event,
-                   const struct input_event *modifier_up_event) {
-    if (!is_event_for_key(event, key)) {
+void handle_key_up(const struct input_event *event, struct key_state *state) {
+    if (!is_event_for_key(event, state->key)) {
         return;
     }
 
-    is_already_down[key] = false;
+    state->is_down = false;
 
-    if (has_became_modifier[key]) {
-        send_event(modifier_up_event);
-        has_became_modifier[key] = false;
-
+    if (state->has_became_modifier) {
+        enqueue_event_and_syn(&state->ev_modifier_up);
+        state->has_became_modifier = false;
         return;
     }
 
-    if (has_sent_real_down[key]) {
-        send_event(event);
-        has_sent_real_down[key] = false;
-
+    if (state->has_sent_real_down) {
+        enqueue_event_and_syn(&state->ev_key_up);
+        state->has_sent_real_down = false;
         return;
     }
 
-    if (can_send_real_down(&recent_down_event[key])) {
-        send_event(&recent_down_event[key]);
-        send_event(event);
+    if (can_send_real_down(&state->recent_down_time)) {
+        enqueue_event_and_syn(&state->ev_key_down);
+        enqueue_event_and_syn(&state->ev_key_up);
     }
 }
 
-bool handle_key(const struct input_event *event, const uint key,
-                const struct input_event *modifier_down_event,
-                const struct input_event *modifier_up_event) {
+bool handle_key(const struct input_event *event, struct key_state *state) {
     if (is_key_down_event(event)) {
-        handle_key_down(event, key, modifier_down_event, modifier_up_event);
+        handle_key_down(event, state);
     } else if (is_key_up_event(event)) {
-        handle_key_up(event, key, modifier_down_event, modifier_up_event);
+        handle_key_up(event, state);
     }
 
-    return is_event_for_key(event, key);
+    return is_event_for_key(event, state->key);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -268,7 +240,6 @@ int main(void) {
     while (read_event(&curr_event)) {
         if (curr_event.type == EV_MSC && curr_event.code == MSC_SCAN) {
             recent_scan = curr_event;
-            recent_time = curr_event.time;
             continue;
         }
 
@@ -278,20 +249,17 @@ int main(void) {
         }
 
         found_handler = false;
-
-        // Modify these to change keys<->modifier correspondence to your
-        // taste. Available key constants are listed in input-event-codes.h
-        // Available modifiers: shift, alt, ctrl, meta. Meta is a
-        // Windows-key on most keyboards.
-        HANDLE_KEY_PAIR(KEY_F, KEY_J, ctrl);
-        HANDLE_KEY_PAIR(KEY_D, KEY_K, meta);
-        HANDLE_KEY_PAIR(KEY_S, KEY_L, shift);
-        HANDLE_KEY_PAIR(KEY_A, KEY_SEMICOLON, alt);
+        for (size_t i = 0; i < key_config_size; i++) {
+            found_handler =
+                handle_key(&curr_event, &key_config[i]) || found_handler;
+        }
 
         if (!found_handler) {
-            write_event_with_time(&recent_scan, recent_time);
-            write_event_with_time(&curr_event, recent_time);
+            enqueue_event(&recent_scan);
+            enqueue_event(&curr_event);
         }
+
+        flush_event_queue();
     }
 
     return EXIT_SUCCESS;
