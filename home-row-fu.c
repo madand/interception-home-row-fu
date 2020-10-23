@@ -51,7 +51,7 @@
 static const struct input_event ev_syn = {
     .type = EV_SYN, .code = SYN_REPORT, .value = 0};
 
-/* Most recent MSC_SCAN event. We receive scan evens before every key event, so
+/* Most recent MSC_SCAN event. We receive scan events before every key event, so
  * we use it for timing comparisons. */
 static struct input_event recent_scan;
 
@@ -59,7 +59,7 @@ static struct input_event recent_scan;
 static struct input_event ev_queue_default[EVENT_BUFFER_SIZE];
 size_t ev_queue_default_size = 0;
 
-/* Delayed output events buffer. Evens from this buffer are sent strictly after
+/* Delayed output events buffer. Events from this buffer are sent strictly after
  * the events from the default event buffer. */
 static struct input_event ev_queue_delayed[EVENT_BUFFER_SIZE];
 size_t ev_queue_delayed_size = 0;
