@@ -79,27 +79,33 @@ struct key_state {
     bool has_sent_real_down;
     /* Flag indicating that the key has became a modifier until released. */
     bool is_locked_to_modifier;
+    /* Flag indicating that we want to simulate modifier press immediately after
+     * the key was pressed. Good with Ctrl to allow a Ctrl+Mouse scroll etc.,
+     * but should probably be false for Alt since GUI apps react to Alt by
+     * activating the main menu shortcuts. */
+    bool should_hold_modifier_on_key_down;
     // Down and Up events conveniently prepared for sending when the time comes:
     const struct input_event ev_real_down;
     const struct input_event ev_real_up;
     const struct input_event ev_modifier_down;
     const struct input_event ev_modifier_up;
 } key_config[] = {
-#define DEFINE_MAPPING(key_code, modifier_code)        \
-    {                                                  \
-        .key              = key_code,                  \
-        .ev_real_down     = {.type  = EV_KEY,          \
-                         .code  = key_code,        \
-                         .value = KEY_EVENT_DOWN}, \
-        .ev_real_up       = {.type  = EV_KEY,          \
-                       .code  = key_code,        \
-                       .value = KEY_EVENT_UP},   \
-        .ev_modifier_down = {.type  = EV_KEY,          \
-                             .code  = modifier_code,   \
-                             .value = KEY_EVENT_DOWN}, \
-        .ev_modifier_up   = {.type  = EV_KEY,          \
-                           .code  = modifier_code,   \
-                           .value = KEY_EVENT_UP},   \
+#define DEFINE_MAPPING(key_code, modifier_code, hold_modifier_on_key_down) \
+    {                                                                      \
+        .key                              = key_code,                      \
+        .should_hold_modifier_on_key_down = hold_modifier_on_key_down,     \
+        .ev_real_down                     = {.type  = EV_KEY,              \
+                         .code  = key_code,            \
+                         .value = KEY_EVENT_DOWN},     \
+        .ev_real_up                       = {.type  = EV_KEY,              \
+                       .code  = key_code,            \
+                       .value = KEY_EVENT_UP},       \
+        .ev_modifier_down                 = {.type  = EV_KEY,              \
+                             .code  = modifier_code,       \
+                             .value = KEY_EVENT_DOWN},     \
+        .ev_modifier_up                   = {.type  = EV_KEY,              \
+                           .code  = modifier_code,       \
+                           .value = KEY_EVENT_UP},       \
     },
 
 // Edit key_config.h to change the mappings to your taste.
@@ -230,9 +236,12 @@ bool can_send_real_down(const struct timeval *recent_down_time) {
 
 void handle_key_down(const struct input_event *event, struct key_state *state) {
     if (is_event_for_key(event, state->key)) {
-        enqueue_delayed_event_and_syn(&state->ev_modifier_down);
+        if (state->should_hold_modifier_on_key_down) {
+            enqueue_delayed_event_and_syn(&state->ev_modifier_down);
+            state->is_modifier_held = true;
+        }
         state->recent_down_time = event->time;
-        state->is_held = state->is_modifier_held = true;
+        state->is_held = true;
         return;
     }
 
@@ -243,14 +252,19 @@ void handle_key_down(const struct input_event *event, struct key_state *state) {
             return;
 
         if (can_lock_to_modifier(&state->recent_down_time)) {
+            if (!state->is_modifier_held) {
+                enqueue_event_and_syn(&state->ev_modifier_down);
+                state->is_modifier_held = true;
+            }
             state->is_locked_to_modifier = true;
             return;
         }
 
         if (can_send_real_down(&state->recent_down_time)) {
-            enqueue_event_and_syn(&state->ev_modifier_up);
-            state->is_modifier_held = false;
-
+            if (state->is_modifier_held) {
+                enqueue_event_and_syn(&state->ev_modifier_up);
+                state->is_modifier_held = false;
+            }
             enqueue_event_and_syn(&state->ev_real_down);
             state->has_sent_real_down = true;
             return;
