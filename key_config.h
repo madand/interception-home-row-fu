@@ -1,7 +1,8 @@
 
 // Modify these to change key<->modifier correspondence to your
-// taste. Available key constants are listed in <input-event-codes.h>
-// META is a Windows-key on most keyboards.
+// taste. Available key constants are listed in <input-event-codes.h>,
+// usually located at: /usr/include/linux/input-event-codes.h
+// Hint: META is a Windows-key on most keyboards.
 
 DEFINE_MAPPING(KEY_A, KEY_LEFTALT)
 DEFINE_MAPPING(KEY_SEMICOLON, KEY_RIGHTALT)
