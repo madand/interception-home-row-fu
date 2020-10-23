@@ -1,6 +1,7 @@
 // home-row-fu.c
 
 // Author: Andriy B. Kmit' <dev@madand.net>
+// URL: https://github.com/madand/interception-home-row-fu
 // Public Domain / CC0 https://creativecommons.org/publicdomain/zero/1.0/
 
 #include <stdio.h>        // setbuf, fwrite, fread
@@ -38,8 +39,10 @@
 #define MSEC_PER_USEC 1e3
 
 /* Size of the output events buffers (each element is of type struct
- * input_event). */
-#define EVENT_BUFFER_SIZE 20
+ * input_event).
+ * With current implementation size of 12 should be precisely what is
+ * needed, but a few spare bytes won't hurt anyone. */
+#define EVENT_BUFFER_SIZE 16
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Global state
