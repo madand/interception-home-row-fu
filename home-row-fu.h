@@ -31,10 +31,10 @@
 #define KEY_EVENT_UP 0
 #define KEY_EVENT_REPEAT 3
 
-/* Microseconds per second */
-#define USEC_PER_SEC 1e6
 /* Microseconds per millisecond */
-#define MSEC_PER_USEC 1e3
+#define MSEC_PER_USEC 1000
+/* Microseconds per second */
+#define USEC_PER_SEC (1000 * MSEC_PER_USEC)
 
 /* Size of the output events buffers (each element is of type struct
  * input_event).
