@@ -26,10 +26,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Internal constants
 
-/* Key event state constants */
-#define KEY_EVENT_DOWN 1
-#define KEY_EVENT_UP 0
-#define KEY_EVENT_REPEAT 3
+/* Key event value constants */
+#define EVENT_VALUE_KEY_UP 0
+#define EVENT_VALUE_KEY_DOWN 1
+#define EVENT_VALUE_KEY_REPEAT 3
 
 /* Microseconds per millisecond */
 #define MSEC_PER_USEC 1000
@@ -42,11 +42,11 @@
  * needed, but a few spare bytes won't hurt anyone. */
 #define EVENT_BUFFER_SIZE 16
 
-#define check_buffer_not_full(buf_var, size_var)                      \
-    if (size_var >= EVENT_BUFFER_SIZE) {                              \
-        fprintf(stderr, "Error in %s(): buffer " #buf_var " is full", \
-                __func__);                                            \
-        exit(EXIT_FAILURE);                                           \
+#define check_buffer_not_full(buf_var, size_var)                         \
+    if (size_var >= EVENT_BUFFER_SIZE) {                                 \
+        fprintf(stderr, "Error in %s(): buffer " #buf_var " is full.\n", \
+                __func__);                                               \
+        exit(EXIT_FAILURE);                                              \
     }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -70,7 +70,7 @@ struct key_state {
     /* Flag indicating that we want to simulate modifier press immediately after
      * the key was pressed. Good with Ctrl to allow a Ctrl+Mouse scroll etc.,
      * but should probably be false for Alt since GUI apps react to Alt by
-     * activating the main menu shortcuts. */
+     * activating the main menu. */
     bool should_hold_modifier_on_key_down;
     // Down and Up events conveniently prepared for sending when the time comes:
     const struct input_event ev_real_down;
@@ -79,23 +79,25 @@ struct key_state {
     const struct input_event ev_modifier_up;
 };
 
-#define DEFINE_MAPPING(key_code, modifier_code, hold_modifier_on_key_down) \
-    {                                                                      \
-        .key                              = key_code,                      \
-        .should_hold_modifier_on_key_down = hold_modifier_on_key_down,     \
-        .ev_real_down                     = {.type  = EV_KEY,              \
-                         .code  = key_code,            \
-                         .value = KEY_EVENT_DOWN},     \
-        .ev_real_up                       = {.type  = EV_KEY,              \
-                       .code  = key_code,            \
-                       .value = KEY_EVENT_UP},       \
-        .ev_modifier_down                 = {.type  = EV_KEY,              \
-                             .code  = modifier_code,       \
-                             .value = KEY_EVENT_DOWN},     \
-        .ev_modifier_up                   = {.type  = EV_KEY,              \
-                           .code  = modifier_code,       \
-                           .value = KEY_EVENT_UP},       \
+// clang-format off
+#define DEFINE_MAPPING(key_code, modifier_code, hold_modifier_on_key_down)   \
+    {                                                                        \
+        .key                              = key_code,                        \
+        .should_hold_modifier_on_key_down = hold_modifier_on_key_down,       \
+        .ev_real_down                     = {.type  = EV_KEY,                \
+                                             .code  = key_code,              \
+                                             .value = EVENT_VALUE_KEY_DOWN}, \
+        .ev_real_up                       = {.type  = EV_KEY,                \
+                                             .code  = key_code,              \
+                                             .value = EVENT_VALUE_KEY_UP},   \
+        .ev_modifier_down                 = {.type  = EV_KEY,                \
+                                             .code  = modifier_code,         \
+                                             .value = EVENT_VALUE_KEY_DOWN}, \
+        .ev_modifier_up                   = {.type  = EV_KEY,                \
+                                             .code  = modifier_code,         \
+                                             .value = EVENT_VALUE_KEY_UP},   \
     },
+// clang-format on
 
 struct key_state key_config[] = {
 // Edit key_config.h to change the mappings to your taste.

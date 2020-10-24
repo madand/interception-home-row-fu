@@ -201,9 +201,9 @@ void handle_key_up(const struct input_event *event, struct key_state *state) {
 }
 
 bool handle_key(const struct input_event *event, struct key_state *state) {
-    if (event->value == KEY_EVENT_DOWN) {
+    if (event->value == EVENT_VALUE_KEY_DOWN) {
         handle_key_down(event, state);
-    } else if (event->value == KEY_EVENT_UP) {
+    } else if (event->value == EVENT_VALUE_KEY_UP) {
         handle_key_up(event, state);
     }
 
