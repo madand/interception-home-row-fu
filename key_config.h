@@ -1,3 +1,4 @@
+#pragma once
 
 // Modify these to change key<->modifier correspondence to your
 // taste. Available key constants are listed in <input-event-codes.h>,
