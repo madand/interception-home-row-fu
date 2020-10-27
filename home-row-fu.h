@@ -12,16 +12,11 @@
 ////////////////////////////////////////////////////////////////////////////////
 /// User configurable constants
 
-/* Delay (in milliseconds) before a key can become a modifier.
- * This allows for burst typing, but slows you down when you actually want a key
- * to act as modifier. */
-#define BECOME_MODIFIER_DELAY_MSEC 150
+#define DEFAULT_CONFIG_FILE "/etc/home-row-fu.toml"
 
-/* Maximum time (in milliseconds) when a key release still inserts a letter.
- * For example, when you press F (acts as Left Ctrl by default), hold it for
- * more than 0.7 seconds then change your mind and just release it - nothing
- * will be inserted. */
-#define REMAIN_REAL_KEY_MSEC 700
+#define DEFAULT_BURST_TYPING_MSEC 150
+
+#define DEFAULT_CAN_INSERT_LETTER_MSEC 700
 
 ////////////////////////////////////////////////////////////////////////////////
 // Internal constants
@@ -42,6 +37,8 @@
  * needed, but a few spare bytes won't hurt anyone. */
 #define EVENT_BUFFER_SIZE 16
 
+#define TOML_ERROR_BUFFER_SIZE 200
+
 #define check_buffer_not_full(buf_var, size_var)                         \
     if (size_var >= EVENT_BUFFER_SIZE) {                                 \
         fprintf(stderr, "Error in %s(): buffer " #buf_var " is full.\n", \
@@ -54,7 +51,7 @@
 
 struct key_state {
     /* Key code of the physical key. */
-    const uint16_t key;
+    uint16_t key;
     /* Time of the most recent Key Down event. */
     struct timeval recent_down_time;
     /* Flag indicating that the key is currently down. */
@@ -71,37 +68,10 @@ struct key_state {
      * the key was pressed. Good with Ctrl to allow a Ctrl+Mouse scroll etc.,
      * but should probably be false for Alt since GUI apps react to Alt by
      * activating the main menu. */
-    bool should_hold_modifier_on_key_down;
+    bool simulate_modifier_press_on_key_down;
     // Down and Up events conveniently prepared for sending when the time comes:
-    const struct input_event ev_real_down;
-    const struct input_event ev_real_up;
-    const struct input_event ev_modifier_down;
-    const struct input_event ev_modifier_up;
+    struct input_event ev_real_down;
+    struct input_event ev_real_up;
+    struct input_event ev_modifier_down;
+    struct input_event ev_modifier_up;
 };
-
-// clang-format off
-#define DEFINE_MAPPING(key_code, modifier_code, hold_modifier_on_key_down)   \
-    {                                                                        \
-        .key                              = key_code,                        \
-        .should_hold_modifier_on_key_down = hold_modifier_on_key_down,       \
-        .ev_real_down                     = {.type  = EV_KEY,                \
-                                             .code  = key_code,              \
-                                             .value = EVENT_VALUE_KEY_DOWN}, \
-        .ev_real_up                       = {.type  = EV_KEY,                \
-                                             .code  = key_code,              \
-                                             .value = EVENT_VALUE_KEY_UP},   \
-        .ev_modifier_down                 = {.type  = EV_KEY,                \
-                                             .code  = modifier_code,         \
-                                             .value = EVENT_VALUE_KEY_DOWN}, \
-        .ev_modifier_up                   = {.type  = EV_KEY,                \
-                                             .code  = modifier_code,         \
-                                             .value = EVENT_VALUE_KEY_UP},   \
-    },
-// clang-format on
-
-struct key_state key_config[] = {
-// Edit key_config.h to change the mappings to your taste.
-#include "key_config.h"
-};
-
-#define KEY_CONFIG_SIZE (sizeof(key_config) / sizeof(key_config[0]))

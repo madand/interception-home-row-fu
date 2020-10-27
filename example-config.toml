@@ -1,0 +1,63 @@
+# Configuration of home-row-fu(1)
+# Default location: /etc/home-row-fu.toml
+
+# Burst Typing time window (in millisecnds).
+# If the time between consecutive key presses is less then this value, keys are
+# treated literlly. Set this according to your typing speed, but remember that
+# bigger values will make you wait longer for a key to act as a modifier.
+# Set to 0 to disable this feature.
+# Default: 150
+burst_typing_msec = 150
+
+# Maximum time (in milliseconds) when a key release still inserts a letter.
+# For example, when you hold the F (acts as Left Ctrl by default) key for more
+# than 0.7 seconds then change your mind and just release it - nothing will be
+# inserted (just like when you hold and release the real Ctrl etc.).
+# Set to some big value (e.g. 99999) to effectively disable this feature.
+# Default: 700
+can_insert_letter_msec = 700
+
+# Add [[mapping]] block for every key you want this plugin to handle.
+#
+# physical_key and modifier_key value may be either integer key code constant,
+# or its textual name as found in the <input-event-codes.h> header file. It
+# usually can be found at: /usr/include/linux/input-event-codes.h
+#
+# simulate_modifier_press_on_key_down parameter controls whether to simulate the
+# modifier press immediately after the physical key press (e.g. to be able to
+# use Ctrl + Mouse Scroll etc. in browsers). Generally, you should set this to
+# false for Alt, because GUI programs tend to immediately activate their main
+# menu on Alt press.
+# Default: true.
+#
+# Hint: META is a Windows-key on most keyboards nowadays.
+
+[[mapping]]
+physical_key = "KEY_A"
+modifier_key = "KEY_LEFTSHIFT"
+[[mapping]]
+physical_key = "KEY_SEMICOLON"
+modifier_key = "KEY_LEFTSHIFT"
+
+[[mapping]]
+physical_key = "KEY_S"
+modifier_key = "KEY_LEFTALT"
+simulate_modifier_press_on_key_down = false
+[[mapping]]
+physical_key = "KEY_L"
+modifier_key = "KEY_RIGHTALT"
+simulate_modifier_press_on_key_down = false
+
+[[mapping]]
+physical_key = "KEY_D"
+modifier_key = "KEY_LEFTMETA"
+[[mapping]]
+physical_key = "KEY_K"
+modifier_key = "KEY_RIGHTMETA"
+
+[[mapping]]
+physical_key = "KEY_F"
+modifier_key = "KEY_LEFTCTRL"
+[[mapping]]
+physical_key = "KEY_J"
+modifier_key = "KEY_RIGHTCTRL"
