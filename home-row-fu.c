@@ -16,36 +16,66 @@
 #include "home-row-fu.h"
 
 ////////////////////////////////////////////////////////////////////////////////
+/// Event handling configuration
+
+struct key_state {
+    /* Key code of the physical key. */
+    uint16_t key;
+    /* Time of the most recent Key Down event. */
+    struct timeval recent_down_time;
+    /* Flag indicating that the key is currently down. */
+    bool is_held;
+    /* Flag indicating that we sent modifier Down event. If this is set we must
+     * eventually send a modifier Up event. */
+    bool is_modifier_held;
+    /* Flag indicating that we sent a real Down event (a letter). If this is set
+     * the key cannot become a modifier until released. */
+    bool has_sent_real_down;
+    /* Flag indicating that the key has became a modifier until released. */
+    bool is_locked_to_modifier;
+    /* Flag indicating that we want to simulate modifier press immediately after
+     * the key was pressed. Good with Ctrl to allow a Ctrl+Mouse scroll etc.,
+     * but should probably be false for Alt since GUI apps react to Alt by
+     * activating the main menu. */
+    bool simulate_modifier_press_on_key_down;
+    // Down and Up events conveniently prepared for sending when the time comes:
+    input_event ev_real_down;
+    input_event ev_real_up;
+    input_event ev_modifier_down;
+    input_event ev_modifier_up;
+};
+
+////////////////////////////////////////////////////////////////////////////////
 /// Global state
 
 /* SYN event should be sent after each emulated event. */
-static const struct input_event ev_syn = {
+static const input_event ev_syn = {
     .type = EV_SYN, .code = SYN_REPORT, .value = 0};
 
 /* Most recent MSC_SCAN event. We receive scan events before every key event, so
  * we use it for timing comparisons. */
-static struct input_event recent_scan;
+static input_event recent_scan;
 
 /* Default output events buffer. */
-static struct input_event ev_queue_default[EVENT_BUFFER_SIZE];
+static input_event ev_queue_default[EVENT_BUFFER_SIZE];
 size_t ev_queue_default_size = 0;
 
 /* Delayed output events buffer. Events from this buffer are sent strictly after
  * the events from the default event buffer. */
-static struct input_event ev_queue_delayed[EVENT_BUFFER_SIZE];
+static input_event ev_queue_delayed[EVENT_BUFFER_SIZE];
 size_t ev_queue_delayed_size = 0;
 
 static int64_t burst_typing_msec      = DEFAULT_BURST_TYPING_MSEC,
                can_insert_letter_msec = DEFAULT_CAN_INSERT_LETTER_MSEC;
 
-static struct key_state *mappings;
+static key_state *mappings;
 static int mappings_size = 0;
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Helper functions
 
 /* Add the event to the default output queue. */
-static inline void enqueue_event(const struct input_event *event) {
+static inline void enqueue_event(const input_event *event) {
     check_buffer_not_full(ev_queue_default, ev_queue_default_size);
 
     ev_queue_default[ev_queue_default_size++] = *event;
@@ -53,17 +83,16 @@ static inline void enqueue_event(const struct input_event *event) {
 
 /* Add the event to the default output queue. Set the time field to that of the
  * recent_scan. */
-static inline void enqueue_event_with_recent_time(
-    const struct input_event *event) {
+static inline void enqueue_event_with_recent_time(const input_event *event) {
     check_buffer_not_full(ev_queue_default, ev_queue_default_size);
 
-    struct input_event new_event              = *event;
+    input_event new_event                     = *event;
     new_event.time                            = recent_scan.time;
     ev_queue_default[ev_queue_default_size++] = new_event;
 }
 
 /* Add the event to the default output queue and add SYN event afterwards. */
-static inline void enqueue_event_and_syn(const struct input_event *event) {
+static inline void enqueue_event_and_syn(const input_event *event) {
     enqueue_event_with_recent_time(event);
     enqueue_event_with_recent_time(&ev_syn);
 }
@@ -71,17 +100,16 @@ static inline void enqueue_event_and_syn(const struct input_event *event) {
 /* Add the event to the delayed output queue. Set the time field to that of the
  * recent_scan. */
 static inline void enqueue_delayed_event_with_recent_time(
-    const struct input_event *event) {
+    const input_event *event) {
     check_buffer_not_full(ev_queue_delayed, ev_queue_delayed_size);
 
-    struct input_event new_event              = *event;
+    input_event new_event                     = *event;
     new_event.time                            = recent_scan.time;
     ev_queue_delayed[ev_queue_delayed_size++] = new_event;
 }
 
 /* Add the event to the delayed output queue and add SYN event afterwards. */
-static inline void enqueue_delayed_event_and_syn(
-    const struct input_event *event) {
+static inline void enqueue_delayed_event_and_syn(const input_event *event) {
     enqueue_delayed_event_with_recent_time(event);
     enqueue_delayed_event_with_recent_time(&ev_syn);
 }
@@ -89,25 +117,25 @@ static inline void enqueue_delayed_event_and_syn(
 /* Write all events to STDOUT. First the events form the default queue and then
  * from the delayed one. Then set the index variables of both queues to 0. */
 static inline void flush_events() {
-    if (fwrite(ev_queue_default, sizeof(struct input_event),
-               ev_queue_default_size, stdout) != ev_queue_default_size)
+    if (fwrite(ev_queue_default, sizeof(input_event), ev_queue_default_size,
+               stdout) != ev_queue_default_size)
         exit(EXIT_FAILURE);
 
-    if (fwrite(ev_queue_delayed, sizeof(struct input_event),
-               ev_queue_delayed_size, stdout) != ev_queue_delayed_size)
+    if (fwrite(ev_queue_delayed, sizeof(input_event), ev_queue_delayed_size,
+               stdout) != ev_queue_delayed_size)
         exit(EXIT_FAILURE);
 
     ev_queue_default_size = ev_queue_delayed_size = 0;
 }
 
 /* Read next event from STDIN. Return true on success. */
-static inline bool read_event(struct input_event *event) {
-    return fread(event, sizeof(struct input_event), 1, stdin) == 1;
+static inline bool read_event(input_event *event) {
+    return fread(event, sizeof(input_event), 1, stdin) == 1;
 }
 
 /* Write event to STDOUT. If write failed, exit the program. */
-static inline void write_event(const struct input_event *event) {
-    if (fwrite(event, sizeof(struct input_event), 1, stdout) != 1)
+static inline void write_event(const input_event *event) {
+    if (fwrite(event, sizeof(input_event), 1, stdout) != 1)
         exit(EXIT_FAILURE);
 }
 
@@ -123,8 +151,8 @@ static inline suseconds_t time_diff(const struct timeval *earlier,
 
 /* Return true if event is for the given key.
  * Key codes can be found in <input-event-codes.h>. */
-static inline bool is_event_for_key(const struct input_event *event,
-                                    const uint key_code) {
+static inline bool is_event_for_key(const input_event *event,
+                                    const uint16_t key_code) {
     return event->code == key_code;
 }
 
@@ -146,7 +174,7 @@ static inline bool can_send_real_down(const struct timeval *recent_down_time) {
 ////////////////////////////////////////////////////////////////////////////////
 /// Key handlers
 
-void handle_key_down(const struct input_event *event, struct key_state *state) {
+void handle_key_down(const input_event *event, key_state *state) {
     if (is_event_for_key(event, state->key)) {
         if (state->simulate_modifier_press_on_key_down) {
             enqueue_delayed_event_and_syn(&state->ev_modifier_down);
@@ -184,7 +212,7 @@ void handle_key_down(const struct input_event *event, struct key_state *state) {
     }
 }
 
-void handle_key_up(const struct input_event *event, struct key_state *state) {
+void handle_key_up(const input_event *event, key_state *state) {
     if (!is_event_for_key(event, state->key))
         return;
 
@@ -213,7 +241,7 @@ void handle_key_up(const struct input_event *event, struct key_state *state) {
     }
 }
 
-bool handle_key(const struct input_event *event, struct key_state *state) {
+bool handle_key(const input_event *event, key_state *state) {
     if (event->value == EVENT_VALUE_KEY_DOWN) {
         handle_key_down(event, state);
     } else if (event->value == EVENT_VALUE_KEY_UP) {
@@ -290,10 +318,10 @@ void read_config_key_code(const toml_table_t *table, const char *key,
     exit(EXIT_FAILURE);
 }
 
-void init_single_mapping(struct key_state *mapping, uint16_t key_code,
+void init_single_mapping(key_state *mapping, uint16_t key_code,
                          uint16_t modifier_code,
                          bool simulate_modifier_press_on_key_down) {
-    *mapping = (struct key_state){
+    *mapping = (key_state){
         .key = key_code,
         .simulate_modifier_press_on_key_down =
             simulate_modifier_press_on_key_down,
@@ -312,7 +340,7 @@ void init_single_mapping(struct key_state *mapping, uint16_t key_code,
     };
 }
 
-void read_config_mapping(struct key_state *mapping, const toml_table_t *table) {
+void read_config_mapping(key_state *mapping, const toml_table_t *table) {
     uint16_t physical_key_code, modifier_key_code;
     bool simulate_modifier_press_on_key_down;
 
@@ -374,7 +402,7 @@ void load_config() {
 }
 
 int main() {
-    struct input_event curr_event;
+    input_event curr_event;
 
     setbuf(stdin, NULL), setbuf(stdout, NULL), setbuf(stderr, NULL);
 
@@ -409,5 +437,5 @@ int main() {
 }
 
 // Local Variables:
-// compile-command: "meson compile -C builddir"
+// compile-command: "meson compile -C build"
 // End:
