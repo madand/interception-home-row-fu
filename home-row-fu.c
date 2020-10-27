@@ -11,8 +11,8 @@
 #include <assert.h>       // assert
 #include <linux/input.h>  // struct input_event
 #include <libevdev/libevdev.h>
+#include <toml.h>
 
-#include "toml.h"
 #include "home-row-fu.h"
 
 ////////////////////////////////////////////////////////////////////////////////
