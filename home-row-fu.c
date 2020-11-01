@@ -173,7 +173,7 @@ static inline bool can_send_real_down(const struct timeval *recent_down_time) {
 ////////////////////////////////////////////////////////////////////////////////
 /// Key handlers
 
-static void handle_key_down(const input_event *event, key_state *state) {
+static inline void handle_key_down(const input_event *event, key_state *state) {
     if (is_event_for_key(event, state->key)) {
         if (state->simulate_modifier_press_on_key_down) {
             enqueue_delayed_event_and_syn(&state->ev_modifier_down);
@@ -211,7 +211,7 @@ static void handle_key_down(const input_event *event, key_state *state) {
     }
 }
 
-static void handle_key_up(const input_event *event, key_state *state) {
+static inline void handle_key_up(const input_event *event, key_state *state) {
     if (!is_event_for_key(event, state->key))
         return;
 
@@ -240,7 +240,7 @@ static void handle_key_up(const input_event *event, key_state *state) {
     }
 }
 
-bool handle_key(const input_event *event, key_state *state) {
+static inline bool handle_key(const input_event *event, key_state *state) {
     if (event->value == EVENT_VALUE_KEY_DOWN) {
         handle_key_down(event, state);
     } else if (event->value == EVENT_VALUE_KEY_UP) {
@@ -251,7 +251,7 @@ bool handle_key(const input_event *event, key_state *state) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// Entry point
+/// Configuration handling
 
 static void read_config_int(const toml_table_t *table, const char *key,
                             int64_t *ret) {
@@ -321,23 +321,32 @@ static void read_config_key_code(const toml_table_t *table, const char *key,
 static void init_single_mapping(key_state *mapping, uint16_t key_code,
                                 uint16_t modifier_code,
                                 bool simulate_modifier_press_on_key_down) {
+    // clang-format off
     *mapping = (key_state){
         .key = key_code,
-        .simulate_modifier_press_on_key_down =
-            simulate_modifier_press_on_key_down,
-        .ev_real_down     = {.type  = EV_KEY,
-                         .code  = key_code,
-                         .value = EVENT_VALUE_KEY_DOWN},
-        .ev_real_up       = {.type  = EV_KEY,
-                       .code  = key_code,
-                       .value = EVENT_VALUE_KEY_UP},
-        .ev_modifier_down = {.type  = EV_KEY,
-                             .code  = modifier_code,
-                             .value = EVENT_VALUE_KEY_DOWN},
-        .ev_modifier_up   = {.type  = EV_KEY,
-                           .code  = modifier_code,
-                           .value = EVENT_VALUE_KEY_UP},
+        .simulate_modifier_press_on_key_down = simulate_modifier_press_on_key_down,
+        .ev_real_down     = {
+            .type  = EV_KEY,
+            .code  = key_code,
+            .value = EVENT_VALUE_KEY_DOWN
+        },
+        .ev_real_up       = {
+            .type  = EV_KEY,
+            .code  = key_code,
+            .value = EVENT_VALUE_KEY_UP
+        },
+        .ev_modifier_down = {
+            .type  = EV_KEY,
+            .code  = modifier_code,
+            .value = EVENT_VALUE_KEY_DOWN
+        },
+        .ev_modifier_up   = {
+            .type  = EV_KEY,
+            .code  = modifier_code,
+            .value = EVENT_VALUE_KEY_UP
+        },
     };
+    // clang-format on
 }
 
 static void read_config_mapping(key_state *mapping, const toml_table_t *table) {
@@ -401,6 +410,9 @@ static void load_config() {
 
     toml_free(table);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+/// Entry point
 
 int main() {
     input_event curr_event;
