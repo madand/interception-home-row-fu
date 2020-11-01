@@ -271,6 +271,7 @@ static void read_config_bool(const toml_table_t *table, const char *key,
                              bool default_ret, bool *ret) {
     int maybe_ret;
     toml_raw_t currval = toml_raw_in(table, key);
+
     if (currval != NULL && toml_rtob(currval, &maybe_ret) != -1) {
         *ret = maybe_ret;
     } else {
@@ -281,7 +282,6 @@ static void read_config_bool(const toml_table_t *table, const char *key,
 static void read_config_key_code(const toml_table_t *table, const char *key,
                                  uint16_t *ret) {
     int64_t maybe_ret;
-    char *key_code_str;
     toml_raw_t currval = toml_raw_in(table, key);
 
     if (currval == NULL) {
@@ -301,6 +301,7 @@ static void read_config_key_code(const toml_table_t *table, const char *key,
     }
 
     // If not int, it might be a string key code name.
+    char *key_code_str;
     if (toml_rtos(currval, &key_code_str) != -1) {
         maybe_ret = libevdev_event_code_from_name(EV_KEY, key_code_str);
         if (maybe_ret >= 0) {
@@ -383,8 +384,7 @@ static void read_config_mappings(const toml_table_t *table) {
         read_config_mapping(mappings + i, toml_table_at(marr, i));
 }
 
-static void load_config() {
-    char *config_file = DEFAULT_CONFIG_FILE;
+static void load_config(const char *config_file) {
     FILE *fp;
     char err_buf[TOML_ERROR_BUFFER_SIZE];
     toml_table_t *table;
@@ -397,6 +397,7 @@ static void load_config() {
 
     table = toml_parse_file(fp, err_buf, TOML_ERROR_BUFFER_SIZE);
     fclose(fp);
+
     if (table == NULL) {
         fprintf(stderr, "Failed to parse config file: %s\nError: %s\n",
                 config_file, err_buf);
@@ -419,7 +420,8 @@ int main() {
 
     setbuf(stdin, NULL), setbuf(stdout, NULL);
 
-    load_config();
+    // TODO: read config file name as cli param
+    load_config(DEFAULT_CONFIG_FILE);
 
     while (read_event(&curr_event)) {
         if (curr_event.type == EV_MSC && curr_event.code == MSC_SCAN) {
