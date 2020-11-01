@@ -6,8 +6,8 @@
 # treated literlly. Set this according to your typing speed, but remember that
 # bigger values will make you wait longer for a key to act as a modifier.
 # Set to 0 to disable this feature.
-# Default: 150
-burst_typing_msec = 150
+# Default: 200
+burst_typing_msec = 200
 
 # Maximum time (in milliseconds) when a key release still inserts a letter.
 # For example, when you hold the F (acts as Left Ctrl by default) key for more

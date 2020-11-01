@@ -26,7 +26,7 @@ other keys are unaffected (their events are passed through).
     after the key release.
 
   * Need to slow down for using modifiers in order to wait out the burst typing
-    time window (150 msec by default).
+    time window (200 msec by default).
 
   * Key Repeat events are discarded, because on longish press (more that 700
     msec by default) keys are being "locked" as modifier and insert nothing when
