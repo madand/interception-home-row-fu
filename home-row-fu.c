@@ -4,12 +4,11 @@
 // URL: https://github.com/madand/interception-home-row-fu
 // Public Domain / CC0 https://creativecommons.org/publicdomain/zero/1.0/
 
-#include <stdio.h>        // setbuf, fwrite, fread
-#include <stdlib.h>       // EXIT_SUCCESS, EXIT_FAILURE
-#include <stdbool.h>      // bool, true, false
-#include <stdint.h>       // size_t
-#include <assert.h>       // assert
-#include <linux/input.h>  // struct input_event
+#include <stdio.h>   // setbuf, fwrite, fread
+#include <stdlib.h>  // EXIT_SUCCESS, EXIT_FAILURE
+#include <stdbool.h>
+#include <stdint.h>
+#include <linux/input.h>  // struct input_event, KEY_A ...
 #include <libevdev/libevdev.h>
 #include <toml.h>
 
@@ -174,7 +173,7 @@ static inline bool can_send_real_down(const struct timeval *recent_down_time) {
 ////////////////////////////////////////////////////////////////////////////////
 /// Key handlers
 
-void handle_key_down(const input_event *event, key_state *state) {
+static void handle_key_down(const input_event *event, key_state *state) {
     if (is_event_for_key(event, state->key)) {
         if (state->simulate_modifier_press_on_key_down) {
             enqueue_delayed_event_and_syn(&state->ev_modifier_down);
@@ -212,7 +211,7 @@ void handle_key_down(const input_event *event, key_state *state) {
     }
 }
 
-void handle_key_up(const input_event *event, key_state *state) {
+static void handle_key_up(const input_event *event, key_state *state) {
     if (!is_event_for_key(event, state->key))
         return;
 
@@ -254,7 +253,8 @@ bool handle_key(const input_event *event, key_state *state) {
 ////////////////////////////////////////////////////////////////////////////////
 /// Entry point
 
-void read_config_int(const toml_table_t *table, const char *key, int64_t *ret) {
+static void read_config_int(const toml_table_t *table, const char *key,
+                            int64_t *ret) {
     int64_t maybe_ret;
     toml_raw_t currval = toml_raw_in(table, key);
     if (currval != NULL && toml_rtoi(currval, &maybe_ret) != -1) {
@@ -267,8 +267,8 @@ void read_config_int(const toml_table_t *table, const char *key, int64_t *ret) {
     }
 }
 
-void read_config_bool(const toml_table_t *table, const char *key,
-                      bool default_ret, bool *ret) {
+static void read_config_bool(const toml_table_t *table, const char *key,
+                             bool default_ret, bool *ret) {
     int maybe_ret;
     toml_raw_t currval = toml_raw_in(table, key);
     if (currval != NULL && toml_rtob(currval, &maybe_ret) != -1) {
@@ -278,8 +278,8 @@ void read_config_bool(const toml_table_t *table, const char *key,
     }
 }
 
-void read_config_key_code(const toml_table_t *table, const char *key,
-                          uint16_t *ret) {
+static void read_config_key_code(const toml_table_t *table, const char *key,
+                                 uint16_t *ret) {
     int64_t maybe_ret;
     char *key_code_str;
     toml_raw_t currval = toml_raw_in(table, key);
@@ -318,9 +318,9 @@ void read_config_key_code(const toml_table_t *table, const char *key,
     exit(EXIT_FAILURE);
 }
 
-void init_single_mapping(key_state *mapping, uint16_t key_code,
-                         uint16_t modifier_code,
-                         bool simulate_modifier_press_on_key_down) {
+static void init_single_mapping(key_state *mapping, uint16_t key_code,
+                                uint16_t modifier_code,
+                                bool simulate_modifier_press_on_key_down) {
     *mapping = (key_state){
         .key = key_code,
         .simulate_modifier_press_on_key_down =
@@ -340,7 +340,7 @@ void init_single_mapping(key_state *mapping, uint16_t key_code,
     };
 }
 
-void read_config_mapping(key_state *mapping, const toml_table_t *table) {
+static void read_config_mapping(key_state *mapping, const toml_table_t *table) {
     uint16_t physical_key_code, modifier_key_code;
     bool simulate_modifier_press_on_key_down;
 
@@ -353,7 +353,7 @@ void read_config_mapping(key_state *mapping, const toml_table_t *table) {
                         simulate_modifier_press_on_key_down);
 }
 
-void read_config_mappings(const toml_table_t *table) {
+static void read_config_mappings(const toml_table_t *table) {
     toml_array_t *marr;
 
     marr = toml_array_in(table, "mapping");
@@ -374,11 +374,11 @@ void read_config_mappings(const toml_table_t *table) {
         read_config_mapping(mappings + i, toml_table_at(marr, i));
 }
 
-void load_config() {
+static void load_config() {
     char *config_file = DEFAULT_CONFIG_FILE;
     FILE *fp;
     char err_buf[TOML_ERROR_BUFFER_SIZE];
-    toml_table_t *rtbl;
+    toml_table_t *table;
 
     fp = fopen(config_file, "r");
     if (fp == NULL) {
@@ -386,25 +386,26 @@ void load_config() {
         exit(EXIT_FAILURE);
     }
 
-    rtbl = toml_parse_file(fp, err_buf, TOML_ERROR_BUFFER_SIZE);
-    if (rtbl == NULL) {
+    table = toml_parse_file(fp, err_buf, TOML_ERROR_BUFFER_SIZE);
+    fclose(fp);
+    if (table == NULL) {
         fprintf(stderr, "Failed to parse config file: %s\nError: %s\n",
                 config_file, err_buf);
         exit(EXIT_FAILURE);
     }
 
-    read_config_int(rtbl, "burst_typing_msec", &burst_typing_msec);
-    read_config_int(rtbl, "can_insert_letter_msec", &can_insert_letter_msec);
+    read_config_int(table, "burst_typing_msec", &burst_typing_msec);
+    read_config_int(table, "can_insert_letter_msec", &can_insert_letter_msec);
 
-    read_config_mappings(rtbl);
+    read_config_mappings(table);
 
-    toml_free(rtbl);
+    toml_free(table);
 }
 
 int main() {
     input_event curr_event;
 
-    setbuf(stdin, NULL), setbuf(stdout, NULL), setbuf(stderr, NULL);
+    setbuf(stdin, NULL), setbuf(stdout, NULL);
 
     load_config();
 
