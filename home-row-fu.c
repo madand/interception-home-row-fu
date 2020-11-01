@@ -253,6 +253,7 @@ static inline bool handle_key(const input_event *event, key_state *state) {
 ////////////////////////////////////////////////////////////////////////////////
 /// Configuration handling
 
+/* Read an integer value into ret. */
 static void read_config_int(const toml_table_t *table, const char *key,
                             int64_t *ret) {
     int64_t maybe_ret;
@@ -267,6 +268,8 @@ static void read_config_int(const toml_table_t *table, const char *key,
     }
 }
 
+/* Read a boolean value into ret. If the value is not set in the table or
+ * otherwise cannot be read, fallback to default_ret. */
 static void read_config_bool(const toml_table_t *table, const char *key,
                              bool default_ret, bool *ret) {
     int maybe_ret;
@@ -279,6 +282,8 @@ static void read_config_bool(const toml_table_t *table, const char *key,
     }
 }
 
+/* Read a key code into ret. Supports reading an integer or a string (e.g.
+ * "KEY_F"). Return value is an integer. */
 static void read_config_key_code(const toml_table_t *table, const char *key,
                                  uint16_t *ret) {
     int64_t maybe_ret;
@@ -319,9 +324,10 @@ static void read_config_key_code(const toml_table_t *table, const char *key,
     exit(EXIT_FAILURE);
 }
 
-static void init_single_mapping(key_state *mapping, uint16_t key_code,
-                                uint16_t modifier_code,
-                                bool simulate_modifier_press_on_key_down) {
+/* Initialize the mapping according to the given arguments. */
+static void init_single_mapping(bool simulate_modifier_press_on_key_down,
+                                uint16_t key_code, uint16_t modifier_code,
+                                key_state *mapping) {
     // clang-format off
     *mapping = (key_state){
         .key = key_code,
@@ -350,7 +356,8 @@ static void init_single_mapping(key_state *mapping, uint16_t key_code,
     // clang-format on
 }
 
-static void read_config_mapping(key_state *mapping, const toml_table_t *table) {
+/* Read a single mapping from the configuration table. */
+static void read_config_mapping(const toml_table_t *table, key_state *mapping) {
     uint16_t physical_key_code, modifier_key_code;
     bool simulate_modifier_press_on_key_down;
 
@@ -359,10 +366,11 @@ static void read_config_mapping(key_state *mapping, const toml_table_t *table) {
     read_config_bool(table, "simulate_modifier_press_on_key_down", true,
                      &simulate_modifier_press_on_key_down);
 
-    init_single_mapping(mapping, physical_key_code, modifier_key_code,
-                        simulate_modifier_press_on_key_down);
+    init_single_mapping(simulate_modifier_press_on_key_down, physical_key_code,
+                        modifier_key_code, mapping);
 }
 
+/* Read all mappings form the configuration table. */
 static void read_config_mappings(const toml_table_t *table) {
     toml_array_t *marr;
 
@@ -381,9 +389,10 @@ static void read_config_mappings(const toml_table_t *table) {
     }
 
     for (int i = 0; i < mappings_size; i++)
-        read_config_mapping(mappings + i, toml_table_at(marr, i));
+        read_config_mapping(toml_table_at(marr, i), mappings + i);
 }
 
+/* Load program configuration form the given file path. */
 static void load_config(const char *config_file) {
     FILE *fp;
     char err_buf[TOML_ERROR_BUFFER_SIZE];
