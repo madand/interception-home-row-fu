@@ -36,7 +36,7 @@ struct key_state {
      * the key was pressed. Good with Ctrl to allow a Ctrl+Mouse scroll etc.,
      * but should probably be false for Alt since GUI apps react to Alt by
      * activating the main menu. */
-    bool simulate_modifier_press_on_key_down;
+    bool immediately_send_modifier;
     // Down and Up events conveniently prepared for sending when the time comes:
     input_event ev_real_down;
     input_event ev_real_up;
@@ -175,7 +175,7 @@ static inline bool can_send_real_down(const struct timeval *recent_down_time) {
 
 static inline void handle_key_down(const input_event *event, key_state *state) {
     if (is_event_for_key(event, state->key)) {
-        if (state->simulate_modifier_press_on_key_down) {
+        if (state->immediately_send_modifier) {
             enqueue_delayed_event_and_syn(&state->ev_modifier_down);
             state->is_modifier_held = true;
         }
@@ -325,13 +325,13 @@ static void read_config_key_code(const toml_table_t *table, const char *key,
 }
 
 /* Initialize the mapping according to the given arguments. */
-static void init_single_mapping(bool simulate_modifier_press_on_key_down,
+static void init_single_mapping(bool immediately_send_modifier,
                                 uint16_t key_code, uint16_t modifier_code,
                                 key_state *mapping) {
     // clang-format off
     *mapping = (key_state){
         .key = key_code,
-        .simulate_modifier_press_on_key_down = simulate_modifier_press_on_key_down,
+        .immediately_send_modifier = immediately_send_modifier,
         .ev_real_down     = {
             .type  = EV_KEY,
             .code  = key_code,
@@ -359,14 +359,15 @@ static void init_single_mapping(bool simulate_modifier_press_on_key_down,
 /* Read a single mapping from the configuration table. */
 static void read_config_mapping(const toml_table_t *table, key_state *mapping) {
     uint16_t physical_key_code, modifier_key_code;
-    bool simulate_modifier_press_on_key_down;
+    bool immediately_send_modifier;
 
     read_config_key_code(table, "physical_key", &physical_key_code);
     read_config_key_code(table, "modifier_key", &modifier_key_code);
-    read_config_bool(table, "simulate_modifier_press_on_key_down", true,
-                     &simulate_modifier_press_on_key_down);
+    read_config_bool(table, "immediately_send_modifier",
+                     IMMEDIATELY_SEND_MODIFIER_DEFAULT,
+                     &immediately_send_modifier);
 
-    init_single_mapping(simulate_modifier_press_on_key_down, physical_key_code,
+    init_single_mapping(immediately_send_modifier, physical_key_code,
                         modifier_key_code, mapping);
 }
 

@@ -17,6 +17,8 @@
 
 #define DEFAULT_CAN_INSERT_LETTER_MSEC 700
 
+#define IMMEDIATELY_SEND_MODIFIER_DEFAULT false
+
 ////////////////////////////////////////////////////////////////////////////////
 // Internal constants
 

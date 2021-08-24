@@ -32,7 +32,7 @@ can_insert_letter_msec = 700
 # constant, or its textual name as found in the <input-event-codes.h> header
 # file. Usually it is located at /usr/include/linux/input-event-codes.h
 #
-# simulate_modifier_press_on_key_down parameter controls whether to simulate the
+# immediately_send_modifier parameter controls whether to simulate the
 # modifier press immediately after the physical key press (e.g. to be able to
 # use Ctrl + Mouse Scroll etc. in browsers). Note that setting this to true for
 # Alt will mess with GUI apps, because they tend to immediately activate their
@@ -52,11 +52,9 @@ modifier_key = "KEY_LEFTSHIFT"
 [[mapping]]
 physical_key = "KEY_S"
 modifier_key = "KEY_LEFTALT"
-simulate_modifier_press_on_key_down = false
 [[mapping]]
 physical_key = "KEY_L"
 modifier_key = "KEY_RIGHTALT"
-simulate_modifier_press_on_key_down = false
 
 [[mapping]]
 physical_key = "KEY_D"
@@ -68,6 +66,8 @@ modifier_key = "KEY_RIGHTMETA"
 [[mapping]]
 physical_key = "KEY_F"
 modifier_key = "KEY_LEFTCTRL"
+immediately_send_modifier = true
 [[mapping]]
 physical_key = "KEY_J"
 modifier_key = "KEY_RIGHTCTRL"
+immediately_send_modifier = true
