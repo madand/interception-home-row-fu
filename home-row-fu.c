@@ -117,12 +117,16 @@ static inline void enqueue_delayed_event_and_syn(const input_event *event) {
  * from the delayed one. Then set the index variables of both queues to 0. */
 static inline void flush_events() {
     if (fwrite(ev_queue_default, sizeof(input_event), ev_queue_default_size,
-               stdout) != ev_queue_default_size)
+               stdout) != ev_queue_default_size) {
+        fprintf(stderr, "Error in flush_events ev_queue_default\n");
         exit(EXIT_FAILURE);
+    }
 
     if (fwrite(ev_queue_delayed, sizeof(input_event), ev_queue_delayed_size,
-               stdout) != ev_queue_delayed_size)
+               stdout) != ev_queue_delayed_size) {
+        fprintf(stderr, "Error in flush_events ev_queue_delayed\n");
         exit(EXIT_FAILURE);
+    }
 
     ev_queue_default_size = ev_queue_delayed_size = 0;
 }
@@ -134,8 +138,10 @@ static inline bool read_event(input_event *event) {
 
 /* Write event to STDOUT. If write failed, exit the program. */
 static inline void write_event(const input_event *event) {
-    if (fwrite(event, sizeof(input_event), 1, stdout) != 1)
+    if (fwrite(event, sizeof(input_event), 1, stdout) != 1) {
+        fprintf(stderr, "Error in write_event\n");
         exit(EXIT_FAILURE);
+    }
 }
 
 /* Return the difference in microseconds between the given timevals. */
