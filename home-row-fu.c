@@ -128,6 +128,8 @@ static inline void flush_events() {
         exit(EXIT_FAILURE);
     }
 
+    fflush(stdout);
+
     ev_queue_default_size = ev_queue_delayed_size = 0;
 }
 
@@ -142,6 +144,7 @@ static inline void write_event(const input_event *event) {
         fprintf(stderr, "Error in write_event\n");
         exit(EXIT_FAILURE);
     }
+    fflush(stdout);
 }
 
 /* Return the difference in microseconds between the given timevals. */
@@ -431,10 +434,14 @@ static void load_config(const char *config_file) {
 ////////////////////////////////////////////////////////////////////////////////
 /// Entry point
 
+// Input buffer for reading one event a time.
+#define INPUT_BUFSIZ (sizeof(input_event))
+static char input_buf[INPUT_BUFSIZ];
+
 int main() {
     input_event curr_event;
 
-    setbuf(stdin, NULL), setbuf(stdout, NULL);
+    setbuffer(stdin, input_buf, INPUT_BUFSIZ);
 
     // TODO: read config file name as cli param
     load_config(DEFAULT_CONFIG_FILE);
