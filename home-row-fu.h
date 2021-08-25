@@ -40,7 +40,7 @@
 
 #define TOML_ERROR_BUFFER_SIZE 200
 
-#define check_buffer_not_full(buf_var, size_var)                         \
+#define ensure_buffer_not_full(buf_var, size_var)                         \
     if (size_var >= EVENT_BUFFER_SIZE) {                                 \
         fprintf(stderr, "Error in %s(): buffer " #buf_var " is full.\n", \
                 __func__);                                               \

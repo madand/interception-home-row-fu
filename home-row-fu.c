@@ -10,8 +10,8 @@
 #include <stdint.h>
 #include <linux/input.h>  // struct input_event, KEY_A ...
 #include <libevdev/libevdev.h>
-#include <toml.h>
 
+#include "lib/toml.h"
 #include "home-row-fu.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -75,7 +75,7 @@ static int mappings_size = 0;
 
 /* Add the event to the default output queue. */
 static inline void enqueue_event(const input_event *event) {
-    check_buffer_not_full(ev_queue_default, ev_queue_default_size);
+    ensure_buffer_not_full(ev_queue_default, ev_queue_default_size);
 
     ev_queue_default[ev_queue_default_size++] = *event;
 }
@@ -83,7 +83,7 @@ static inline void enqueue_event(const input_event *event) {
 /* Add the event to the default output queue. Set the time field to that of the
  * recent_scan. */
 static inline void enqueue_event_with_recent_time(const input_event *event) {
-    check_buffer_not_full(ev_queue_default, ev_queue_default_size);
+    ensure_buffer_not_full(ev_queue_default, ev_queue_default_size);
 
     input_event new_event                     = *event;
     new_event.time                            = recent_scan.time;
@@ -100,7 +100,7 @@ static inline void enqueue_event_and_syn(const input_event *event) {
  * recent_scan. */
 static inline void enqueue_delayed_event_with_recent_time(
     const input_event *event) {
-    check_buffer_not_full(ev_queue_delayed, ev_queue_delayed_size);
+    ensure_buffer_not_full(ev_queue_delayed, ev_queue_delayed_size);
 
     input_event new_event                     = *event;
     new_event.time                            = recent_scan.time;
