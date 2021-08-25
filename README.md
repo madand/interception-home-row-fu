@@ -35,11 +35,7 @@ other keys are unaffected (their events are passed through).
 License
 -------
 
-[CC0](https://creativecommons.org/publicdomain/zero/1.0/) / Public Domain
-
-[![CC0](https://licensebuttons.net/p/zero/1.0/88x31.png)](https://creativecommons.org/publicdomain/zero/1.0/)
-
-TOML parser (toml.h and toml.c) is licensed under MIT.
+This project is licensed under the terms of the MIT license.
 
 Related Projects
 ----------------
