@@ -47,7 +47,7 @@ physical_key = "KEY_A"
 modifier_key = "KEY_LEFTSHIFT"
 [[mapping]]
 physical_key = "KEY_SEMICOLON"
-modifier_key = "KEY_LEFTSHIFT"
+modifier_key = "KEY_RIGHTSHIFT"
 
 [[mapping]]
 physical_key = "KEY_S"
