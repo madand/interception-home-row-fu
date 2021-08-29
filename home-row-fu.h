@@ -35,9 +35,7 @@
 #define DEFAULT_CONFIG_FILE "/etc/home-row-fu.toml"
 
 #define DEFAULT_BURST_TYPING_MSEC 200
-
 #define DEFAULT_CAN_INSERT_LETTER_MSEC 700
-
 #define DEFAULT_IMMEDIATELY_SEND_MODIFIER false
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -53,15 +51,10 @@
 /* Microseconds per second */
 #define US_PER_SECOND (1000 * US_PER_MS)
 
-/* Size of the output events buffers (each element is of type struct
- * input_event).
- * With current implementation size of 12 should be precisely what is
- * needed, but a few spare bytes won't hurt anyone. */
 #define EVENT_BUFFER_SIZE 16
-
 #define TOML_ERROR_BUFFER_SIZE 200
 
-#define ensure_buffer_not_full(buf_var, size_var)                         \
+#define ensure_buffer_not_full(buf_var, size_var)                        \
     if (size_var >= EVENT_BUFFER_SIZE) {                                 \
         fprintf(stderr, "Error in %s(): buffer " #buf_var " is full.\n", \
                 __func__);                                               \

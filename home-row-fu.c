@@ -163,8 +163,8 @@ static inline bool can_lock_to_modifier(
            (burst_typing_msec * US_PER_MS);
 }
 
-/* Delay-based guard to prevent insertion of a letter if the key was pressed for
- * a longish time. */
+/* Guard against the insertion of a letter, if the key was pressed for a longish
+ * time. */
 static inline bool can_send_real_down(const struct timeval *recent_down_time) {
     return time_diff(recent_down_time, &recent_scan.time) <
            (can_insert_letter_msec * US_PER_MS);

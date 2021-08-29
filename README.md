@@ -22,8 +22,8 @@ make install-config-file
 Caveats
 -------
 
-All of the following caveats pertain only to the keys this plugin handles, all
-other keys are unaffected (their events are passed through).
+The following caveats only pertain to the keys the plugin is configured to
+handle; all events pertaining to the other keys are just passed through.
 
   * Visual lag when entering one of the handled keys. This is by design: the
     keys are being sent either after the next key press (during burst typing) or
@@ -33,8 +33,14 @@ other keys are unaffected (their events are passed through).
     time window (200 msec by default).
 
   * Key Repeat events are discarded, because on longish press (more that 700
-    msec by default) keys are being "locked" as modifier and insert nothing when
-    released.
+    msec by default) keys are being "locked" to be a modifier and would insert
+    nothing when released.
+
+TODO
+----
+
+  * Fix interaction of e.g. the real Left Shift holding and pressing A (which
+    emulates) Left Shift.
 
 License
 -------
