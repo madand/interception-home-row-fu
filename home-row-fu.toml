@@ -1,5 +1,5 @@
 # Configuration of home-row-fu(1)
-# Default path of this file is /etc/home-row-fu.toml
+# Default path of this file is /usr/local/etc/home-row-fu.toml
 
 # Burst Typing time frame (in millisecond).
 #

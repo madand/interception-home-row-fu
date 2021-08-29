@@ -32,8 +32,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 /// User configurable constants
 
-#define DEFAULT_CONFIG_FILE "/etc/home-row-fu.toml"
-
+#define DEFAULT_CONFIG_FILE "/usr/local/etc/home-row-fu.toml"
 #define DEFAULT_BURST_TYPING_MSEC 200
 #define DEFAULT_CAN_INSERT_LETTER_MSEC 700
 #define DEFAULT_IMMEDIATELY_SEND_MODIFIER false
