@@ -172,7 +172,7 @@ static inline void write_event(const input_event *event) {
 static inline suseconds_t time_diff(const struct timeval *earlier,
                                     const struct timeval *later) {
     return later->tv_usec - earlier->tv_usec +
-           (later->tv_sec - earlier->tv_sec) * USEC_PER_SEC;
+           (later->tv_sec - earlier->tv_sec) * US_PER_SECOND;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -190,14 +190,14 @@ static inline bool is_event_for_key(const input_event *event,
 static inline bool can_lock_to_modifier(
     const struct timeval *recent_down_time) {
     return time_diff(recent_down_time, &recent_scan.time) >
-           (burst_typing_msec * MSEC_PER_USEC);
+           (burst_typing_msec * US_PER_MS);
 }
 
 /* Delay-based guard to prevent insertion of a letter if the key was pressed for
  * a longish time. */
 static inline bool can_send_real_down(const struct timeval *recent_down_time) {
     return time_diff(recent_down_time, &recent_scan.time) <
-           (can_insert_letter_msec * MSEC_PER_USEC);
+           (can_insert_letter_msec * US_PER_MS);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -394,7 +394,7 @@ static void read_config_mapping(const toml_table_t *table, key_state *mapping) {
     read_config_key_code(table, "physical_key", &physical_key_code);
     read_config_key_code(table, "modifier_key", &modifier_key_code);
     read_config_bool(table, "immediately_send_modifier",
-                     IMMEDIATELY_SEND_MODIFIER_DEFAULT,
+                     DEFAULT_IMMEDIATELY_SEND_MODIFIER,
                      &immediately_send_modifier);
 
     init_single_mapping(immediately_send_modifier, physical_key_code,

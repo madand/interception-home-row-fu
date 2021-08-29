@@ -38,7 +38,7 @@
 
 #define DEFAULT_CAN_INSERT_LETTER_MSEC 700
 
-#define IMMEDIATELY_SEND_MODIFIER_DEFAULT false
+#define DEFAULT_IMMEDIATELY_SEND_MODIFIER false
 
 ////////////////////////////////////////////////////////////////////////////////
 // Internal constants
@@ -49,9 +49,9 @@
 #define EVENT_VALUE_KEY_REPEAT 3
 
 /* Microseconds per millisecond */
-#define MSEC_PER_USEC 1000
+#define US_PER_MS 1000
 /* Microseconds per second */
-#define USEC_PER_SEC (1000 * MSEC_PER_USEC)
+#define US_PER_SECOND (1000 * US_PER_MS)
 
 /* Size of the output events buffers (each element is of type struct
  * input_event).
