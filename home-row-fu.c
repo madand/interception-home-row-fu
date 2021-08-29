@@ -25,45 +25,15 @@
 // Author: Andriy B. Kmit' <dev@madand.net>
 // URL: https://github.com/madand/interception-home-row-fu
 
-#include <stdio.h>   // setbuf, fwrite, fread
-#include <stdlib.h>  // EXIT_SUCCESS, EXIT_FAILURE
 #include <stdbool.h>
 #include <stdint.h>
-#include <linux/input.h>  // struct input_event, KEY_A ...
+#include <stdio.h>   // setbuf, fwrite, fread
+#include <stdlib.h>  // EXIT_SUCCESS, EXIT_FAILURE
 #include <libevdev/libevdev.h>
 
 #include "lib/toml.h"
 #include "home-row-fu.h"
 
-////////////////////////////////////////////////////////////////////////////////
-/// Event handling configuration
-
-struct key_state {
-    /* Key code of the physical key. */
-    uint16_t key;
-    /* Time of the most recent Key Down event. */
-    struct timeval recent_down_time;
-    /* Flag indicating that the key is currently down. */
-    bool is_held;
-    /* Flag indicating that we sent modifier Down event. If this is set we must
-     * eventually send a modifier Up event. */
-    bool is_modifier_held;
-    /* Flag indicating that we sent a real Down event (a letter). If this is set
-     * the key cannot become a modifier until released. */
-    bool has_sent_real_down;
-    /* Flag indicating that the key has became a modifier until released. */
-    bool is_locked_to_modifier;
-    /* Flag indicating that we want to simulate modifier press immediately after
-     * the key was pressed. Good with Ctrl to allow a Ctrl+Mouse scroll etc.,
-     * but should probably be false for Alt since GUI apps react to Alt by
-     * activating the main menu. */
-    bool immediately_send_modifier;
-    // Down and Up events conveniently prepared for sending when the time comes:
-    input_event ev_real_down;
-    input_event ev_real_up;
-    input_event ev_modifier_down;
-    input_event ev_modifier_up;
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 /// Global state
