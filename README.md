@@ -12,7 +12,11 @@ plugin so you need to have them installed. The plugin itself has no external
 dependencies and can be compiled as simple as:
 
 ``` shell
-gcc -o home-row-fu home-row-fu.c
+make
+make install
+# Invoke the following command only if you install for the first time, as it
+# will overwrite any existing config file!
+make install-config-file
 ```
 
 Caveats
